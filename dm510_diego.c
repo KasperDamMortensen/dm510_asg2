@@ -27,6 +27,11 @@ static ssize_t dm510_read( struct file*, char*, size_t, loff_t* );
 static ssize_t dm510_write( struct file*, const char*, size_t, loff_t* );
 long dm510_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
+struct buffer setup_buffer( void );
+static void setup_cdev(struct device *dev, int index);
+static int spacefree(struct buffer *buf);
+static int getwritespace(struct buffer *buf, struct file *filp);
+
 #define DEVICE_NAME "dm510_dev" /* Dev name as it appears in /proc/devices */
 #define MAJOR_NUMBER 255
 #define MIN_MINOR_NUMBER 0
@@ -45,7 +50,7 @@ long dm510_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 // This is a device which reads from one buffer and writes into another. 
 // This is initialised in the open method.
 struct device {
-	struct buffer bufferIN;			// The buffer it reads from.
+	struct buffer bufferIn;			// The buffer it reads from.
 	struct buffer bufferOut;		// The buffer it writes to.
     struct cdev cdev;               /* Char device structure */		// Would this mean that buffer doesn't get a cdev? Probably
     struct mutex mutex;             /* mutual exclusion semaphore */		// I think this should be included.
@@ -58,6 +63,7 @@ struct buffer {
         int buffersize;                    /* used in pointer arithmetic */
         char *rp, *wp;                     /* where to read, where to write */
         int nreaders, nwriters;            /* number of openings for r/w */
+        // struct fasync_struct *async_queue; /* asynchronous readers */
         struct mutex mutex;                /* mutual exclusion semaphore */
 };
 
@@ -156,8 +162,6 @@ static void setup_cdev(struct device *dev, int index) {
 /* called when module is loaded */
 int dm510_init_module( void ) {
 
-	/* initialization code belongs here */
-
 	// Here starts the code taken from scull_init_module.
 	int result, i;
 	dev_t dev = 0;
@@ -190,17 +194,17 @@ int dm510_init_module( void ) {
 	// Here starts the code taken from scull_p_init.
 	first_devno = dev;
 	devices = kmalloc(nr_devs * sizeof(struct device), GFP_KERNEL);
-	if (devices == NULL) {
+	if (!devices) {
 		scull_cleanup_module();
 		return -ENOMEM;
 	}
 	memset(devices, 0, nr_devs * sizeof(struct device));
 	for (i = 0; i < nr_devs; i++) {
 		if (iminor(devices[i]) == 0) {
-			devices[i].bufferIN = buffer0;
+			devices[i].bufferIn = buffer0;
 			devices[i].bufferOut = buffer1;
 		} else {		// (iminor(devices[i]) == 1)
-			devices[i].bufferIN = buffer1;
+			devices[i].bufferIn = buffer1;
 			devices[i].bufferOut = buffer0;
 		}
 		mutex_init(&devices[i].mutex);
@@ -218,8 +222,6 @@ int dm510_init_module( void ) {
 /* Called when module is unloaded */
 // or on failure
 void dm510_cleanup_module( void ) {
-
-	/* clean up code belongs here */
 
 	int i;
 
@@ -251,8 +253,6 @@ void dm510_cleanup_module( void ) {
 /* Called when a process tries to open the device file */
 static int dm510_open( struct inode *inode, struct file *filp ) {
 	
-	/* device claiming code belongs here */
-
 	struct device *dev;	
 
 	// Identify which device is being opened and save a pointer to it for future use
@@ -265,12 +265,12 @@ static int dm510_open( struct inode *inode, struct file *filp ) {
 	// Update the number of readers and writers 
 	/* use f_mode, not  f_flags: it's cleaner (fs/open.c tells why) */
 	if (filp->f_mode & FMODE_READ)
-		dev->nreaders++;
-	if (filp->f_mode & FMODE_WRITE)
-		dev->nwriters++;
+		dev->bufferIn->nreaders++;		// Here it gets interesting...
+	if (filp->f_mode & FMODE_WRITE)		// Does it need the buffer's lock 
+		dev->bufferOut->nwriters++;		// to check these values?
 	mutex_unlock(&dev->mutex);
 
-	// return nonseekable_open(inode, filp);		// Should this be used?
+	// return nonseekable_open(inode, filp);		// Should this be used? 
 	return 0;
 }
 
@@ -285,7 +285,17 @@ static int dm510_open( struct inode *inode, struct file *filp ) {
 /* Called when a process closes the device file. */
 static int dm510_release( struct inode *inode, struct file *filp ) {
 
-	/* device release code belongs here */
+	struct device *dev = filp->private_data;
+
+	/* remove this filp from the asynchronously notified filp's */
+	// scull_p_fasync(-1, filp, 0);		// What is this?
+
+	mutex_lock(&dev->mutex);			// Not interruptible? No if statement or -ERESTARTSYS either...
+	if (filp->f_mode & FMODE_READ)
+		dev->bufferIn->nreaders--;
+	if (filp->f_mode & FMODE_WRITE)		// Not an else if?
+		dev->bufferOut->nwriters--;
+	mutex_unlock(&dev->mutex);
 		
 	return 0;
 }
@@ -302,10 +312,43 @@ static ssize_t dm510_read( struct file *filp,
     size_t count,   /* The max number of bytes to read  */
     loff_t *f_pos )  /* The offset in the file           */
 {
+	// This function isn't finished! The locks are all messed up, we need for both dev and bufIn.
 	
-	/* read code belongs here */
-	
-	return 0; //return number of bytes read
+	struct device *dev = filp->private_data;
+	struct buffer *bufIn = dev->bufferIn;
+
+	if (mutex_lock_interruptible(&dev->mutex))	// We also need to acquire the buffer's lock.
+		return -ERESTARTSYS;
+
+	while (bufIn->rp == bufIn->wp) { /* nothing to read */
+		mutex_unlock(&dev->mutex); /* release the lock */
+		if (filp->f_flags & O_NONBLOCK)
+			return -EAGAIN;
+		PDEBUG("\"%s\" reading: going to sleep\n", current->comm);
+		if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp)))
+			return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
+		/* otherwise loop, but first reacquire the lock */
+		if (mutex_lock_interruptible(&dev->mutex))
+			return -ERESTARTSYS;
+	}
+	/* ok, data is there, return something */
+	if (bufIn->wp > bufIn->rp)
+		count = min(count, (size_t)(bufIn->wp - bufIn->rp));
+	else /* the write pointer has wrapped, return data up to dev->end */
+		count = min(count, (size_t)(bufIn->end - bufIn->rp));
+	if (copy_to_user(buf, bufIn->rp, count)) {
+		mutex_unlock (&dev->mutex);
+		return -EFAULT;
+	}
+	dev->rp += count;
+	if (bufIn->rp == bufIn->end)
+		bufIn->rp = bufIn->start; /* wrapped */
+	mutex_unlock (&dev->mutex);
+
+	/* finally, awake any writers and return */
+	wake_up_interruptible(&bufIn->outq);
+	PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
+	return count;	
 }
 
 
@@ -322,11 +365,73 @@ static ssize_t dm510_write( struct file *filp,
 {
 
 	/* write code belongs here */	
-	
-	return 0; //return number of bytes written
+
+	struct buffer *bufOut = filp->private_data->bufferOut;
+	int result;
+
+	if (mutex_lock_interruptible(&bufOut->mutex))
+		return -ERESTARTSYS;
+
+	/* Make sure there's space to write */
+	result = getwritespace(bufOut, filp);
+	if (result)				// ??
+		return result; /* scull_getwritespace called mutex_unlock(&dev->mutex) */
+ 
+	/* ok, space is there, accept something */
+	count = min(count, (size_t)spacefree(bufOut));
+	if (bufOut->wp >= bufOut->rp)
+		count = min(count, (size_t)(bufOut->end - bufOut->wp)); /* to end-of-buf */
+	else /* the write pointer has wrapped, fill up to rp-1 */
+		count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
+	PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, buf);
+	if (copy_from_user(bufOut->wp, buf, count)) {
+		mutex_unlock (&bufOut->mutex);
+		return -EFAULT;
+	}
+	bufOut->wp += count;
+	if (bufOut->wp == bufOut->end)
+		bufOut->wp = bufOut->buffer; /* wrapped */
+	mutex_unlock(&bufOut->mutex);
+
+	/* finally, awake any reader */
+	wake_up_interruptible(&bufOut->inq);  /* blocked in read() and select() */
+
+	/* and signal asynchronous readers, explained late in chapter 5 */
+	if (bufOut->async_queue)
+		kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN);
+	PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);
+	return count;
 }
 
+/* How much space is free? */
+static int spacefree(struct buffer *buf) {
+	if (buf->rp == buf->wp)
+		return buf->buffersize - 1;
+	return ((buf->rp + buf->buffersize - buf->wp) % buf->buffersize) - 1;
+}
 
+/* Wait for space for writing; caller must hold device semaphore.  On
+ * error the semaphore will be released before returning. */
+static int getwritespace(struct buffer *buf, struct file *filp)
+{
+	while (spacefree(buf) == 0) { /* full */
+		DEFINE_WAIT(wait);
+		
+		mutex_unlock(&buf->mutex);
+		if (filp->f_flags & O_NONBLOCK)
+			return -EAGAIN;
+		PDEBUG("\"%s\" writing: going to sleep\n",current->comm);
+		prepare_to_wait(&buf->outq, &wait, TASK_INTERRUPTIBLE);
+		if (spacefree(buf) == 0)
+			schedule();
+		finish_wait(&buf->outq, &wait);
+		if (signal_pending(current))
+			return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
+		if (mutex_lock_interruptible(&buf->mutex))
+			return -ERESTARTSYS;
+	}
+	return 0;
+}	
 
 
 
