@@ -38,18 +38,6 @@ long dm510_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 /* end of what really should have been in a .h file */
 
 
-/*
- * Notes
- *
- * Initialise two devices and two buffers at the beginning instead of doing it dynamically.
- * 
- * There was something about using minor numbers to know which buffer to read or write from, right?
- * 
- * The open method in pipe.c does a lot of things about initialising the buffers. This would not be necessary 
- * in our program, because the only two buffers are initialised at the beginning and remain 
- * for the rest of the code. 
- * 
- */
 
 
 
@@ -99,8 +87,6 @@ static struct buffer *buffer0;
 static struct buffer *buffer1;
 
 
-
-
 /* file operations struct */
 static struct file_operations dm510_fops = {
 	.owner   = THIS_MODULE,
@@ -113,13 +99,21 @@ static struct file_operations dm510_fops = {
 
 
 
+
+
+
+
+
 // Auxiliary function for initialising a single buffer. 
 struct buffer setup_buffer( void ) {
 
 	struct buffer *buf;
 
 	// Allocate the structure
-	buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);	// I am unsure of the * here.
+	buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);	
+	if (!buf) {
+
+	}
 	memset(buf, 0, sizeof(struct buffer));
 
 	// Allocate the actual buffer 
@@ -197,8 +191,8 @@ int dm510_init_module( void ) {
 	first_devno = dev;
 	devices = kmalloc(nr_devs * sizeof(struct device), GFP_KERNEL);
 	if (devices == NULL) {
-		unregister_chrdev_region(dev, nr_devs);
-		return 0;
+		scull_cleanup_module();
+		return -ENOMEM;
 	}
 	memset(devices, 0, nr_devs * sizeof(struct device));
 	for (i = 0; i < nr_devs; i++) {
@@ -216,6 +210,8 @@ int dm510_init_module( void ) {
 	printk(KERN_INFO "DM510: Hello from your device!\n");
 	return 0;
 }
+
+
 
 
 
@@ -250,35 +246,21 @@ void dm510_cleanup_module( void ) {
 
 
 
+
+
 /* Called when a process tries to open the device file */
 static int dm510_open( struct inode *inode, struct file *filp ) {
 	
 	/* device claiming code belongs here */
 
-	struct buffer *dev;	// What data structure should replace scull_pipe? Should it be buffer?
+	struct device *dev;	
 
 	// Identify which device is being opened and save a pointer to it for future use
-	dev = container_of(inode->i_cdev, struct buffer, cdev);
+	dev = container_of(inode->i_cdev, struct device, cdev);
 	filp->private_data = dev;
 
 	if (mutex_lock_interruptible(&dev->mutex))
 		return -ERESTARTSYS;
-
-	// No need to initialise the buffers 
-	// But use what they have written here to know how to do it 
-	if (!dev->buffer) {
-		/* allocate the buffer */
-		dev->buffer = kmalloc(scull_p_buffer, GFP_KERNEL);
-		if (!dev->buffer) {
-			mutex_unlock(&dev->mutex);
-			return -ENOMEM;
-		}
-	}
-	// Initialise the offset pointers
-	dev->buffersize = scull_p_buffer;
-	dev->end = dev->buffer + dev->buffersize;
-	dev->rp = dev->wp = dev->buffer; /* rd and wr from the beginning */
-	// End of section for the buffer things that should happen outside of open
 
 	// Update the number of readers and writers 
 	/* use f_mode, not  f_flags: it's cleaner (fs/open.c tells why) */
@@ -288,10 +270,14 @@ static int dm510_open( struct inode *inode, struct file *filp ) {
 		dev->nwriters++;
 	mutex_unlock(&dev->mutex);
 
-	return nonseekable_open(inode, filp);
-
+	// return nonseekable_open(inode, filp);		// Should this be used?
 	return 0;
 }
+
+
+
+
+
 
 
 
@@ -303,6 +289,9 @@ static int dm510_release( struct inode *inode, struct file *filp ) {
 		
 	return 0;
 }
+
+
+
 
 
 
@@ -322,6 +311,9 @@ static ssize_t dm510_read( struct file *filp,
 
 
 
+
+
+
 /* Called when a process writes to dev file */
 static ssize_t dm510_write( struct file *filp,
     const char *buf,/* The buffer to get data from      */
@@ -333,6 +325,11 @@ static ssize_t dm510_write( struct file *filp,
 	
 	return 0; //return number of bytes written
 }
+
+
+
+
+
 
 
 /* called by system call icotl */ 
@@ -349,6 +346,10 @@ long dm510_ioctl(
 
 
 
+
+
+
+
 module_init( dm510_init_module );
 module_exit( dm510_cleanup_module );
 
@@ -360,9 +361,21 @@ MODULE_LICENSE( "GPL" );
 
 
 
+
+
+
+
+
 // ================ DUMPSTER =================================
 
 // I'm going to dump code here to edit as much as I want
+
+// Functions that I am not sure we will need. 
+static int scull_p_fasync(int fd, struct file *filp, int mode);
+static int spacefree(struct scull_pipe *dev);
+
+
+
 
 
 
