@@ -19,6 +19,7 @@
 #include <linux/semaphore.h>
 /* #include <asm/system.h> */
 #include <asm/switch_to.h>
+#include <linux/cdev.h>
 /* Prototypes - this would normally go in a .h file */
 static int dm510_open( struct inode*, struct file* );
 static int dm510_release( struct inode*, struct file* );
@@ -107,11 +108,11 @@ struct buffer {
         struct mutex mutex;                /* mutual exclusion semaphore */
 };
 
-struct device {
+struct device1 {
 	struct buffer bufferIn;			// The buffer it reads from.
 	struct buffer bufferOut;		// The buffer it writes to.
     struct cdev cdev;               /* Char device structure */		// Would this mean that buffer doesn't get a cdev? Probably
-    //? struct mutex mutex;                /* mutual exclusion semaphore */
+    struct mutex mutex;                /* mutual exclusion semaphore */
 
 };
 
@@ -124,12 +125,12 @@ int buffer_size =  BUFFER_SIZE;					/* Explains itself (prev scull_p_buffer) */
 dev_t first_devno;									/* Our first device number (prev scull_p_devno)*/
 
 // I suppose that module_param allows you to modify some structure safely and easily...
-module_param(nr_devs, int, 0);	/* FIXME check perms */
-module_param(buffer_size, int, 0);
+//module_param(nr_devs, int, 0);	/* FIXME check perms */
+//module_param(buffer_size, int, 0);
 
 // These are our two devices.
 // This variable gets used in the init function.
-static struct device *devices;
+static struct device1 *devices;
 
 // We need two buffers to read and write from.
 // Is this correct? What is the difference between these buffers and devices?
@@ -156,7 +157,7 @@ static struct file_operations dm510_fops = {
 /*
  * Set up a cdev entry.
  */
-static void setup_cdev(struct buffer *dev, int index)
+static void setup_cdev(struct device1 *dev, int index)
 {
 	int err, devno = first_devno + index;
     
@@ -208,8 +209,8 @@ int dm510_init_module( void ) {
 	}
 	memset(devices, 0, nr_devs * sizeof(struct buffer));
 	for (i = 0; i < nr_devs; i++) {
-		init_waitqueue_head(&(devices[i].inq));
-		init_waitqueue_head(&(devices[i].outq));
+		init_waitqueue_head(&(devices[i].bufferIn));
+		init_waitqueue_head(&(devices[i].bufferOut));//new function or change back to inq and outq
 		mutex_init(&devices[i].mutex);
 		setup_cdev(devices + i, i);		
 	}
@@ -217,7 +218,7 @@ int dm510_init_module( void ) {
 	printk(KERN_INFO "DM510: Hello from your device!\n");
 	return 0;
 
-	fail:
+	//fail:
 	dm510_cleanup_module();
 	return result;
 }
@@ -241,7 +242,8 @@ void dm510_cleanup_module( void ) {
 
 	for (i = 0; i < nr_devs; i++) {
 		cdev_del(&devices[i].cdev);
-		kfree(devices[i].buffer);
+		kfree(devices[i].bufferIn);
+		kfree(devices[i].bufferOut);
 	}
 	kfree(devices);
 	unregister_chrdev_region(first_devno, nr_devs);
@@ -270,14 +272,14 @@ static int dm510_open( struct inode *inode, struct file *filp ) {
 	// But use what they have written here to know how to do it 
 	if (!dev -> start) {
 		/* allocate the buffer */
-		dev -> start = kmalloc(scull_p_buffer, GFP_KERNEL);
+		dev -> start = kmalloc(BUFFER_SIZE, GFP_KERNEL);
 		if (!dev -> start) {
 			mutex_unlock(&dev->mutex);
 			return -ENOMEM;
 		}
 	}
 	// Initialise the offset pointers
-	dev->buffersize = scull_p_buffer;
+	dev->buffersize = BUFFER_SIZE;
 	dev->end = dev-> start + dev->buffersize;
 	dev->rp = dev->wp = dev-> start; /* rd and wr from the beginning */
 	// End of section for the buffer things that should happen outside of open
