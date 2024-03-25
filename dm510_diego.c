@@ -111,7 +111,7 @@ static struct file_operations dm510_fops = {
 
 
 // Auxiliary function for initialising a single buffer. 
-struct buffer setup_buffer( void ) {
+buffer setup_buffer( void ) {
 
 	static struct buffer *buf;
 
@@ -340,7 +340,7 @@ static ssize_t dm510_read( struct file *filp,
 		mutex_unlock (&dev->mutex);
 		return -EFAULT;
 	}
-	dev->rp += count;
+	dev->bufferIn.rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
 	if (bufIn->rp == bufIn->end)
 		bufIn->rp = bufIn->start; /* wrapped */
 	mutex_unlock (&dev->mutex);
