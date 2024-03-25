@@ -1,0 +1,223 @@
+ymerdrys@KaspeLam:~/dm510/assignment2$ make
+make -C ../linux-6.6.9 M=/home/ymerdrys/dm510/assignment2 LDDINC=../linux-6.6.9/include ARCH=um modules
+make[1]: Entering directory '/home/ymerdrys/dm510/linux-6.6.9'
+  CC [M]  /home/ymerdrys/dm510/assignment2/dm510_dev.o
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:31:31: warning: ‘struct dm510_device’ declared inside parameter list will not be visible outside of this definition or declaration
+   31 | static void setup_cdev(struct dm510_device *dev, int index);
+      |                               ^~~~~~~~~~~~
+In file included from ./include/linux/module.h:22,
+                 from /home/ymerdrys/dm510/assignment2/dm510_dev.c:9:
+./include/linux/moduleparam.h:409:45: error: redefinition of ‘__check_nr_devs’
+  409 |         static inline type __always_unused *__check_##name(void) { return(p); }
+      |                                             ^~~~~~~~
+./include/linux/moduleparam.h:429:34: note: in expansion of macro ‘__param_check’
+  429 | #define param_check_int(name, p) __param_check(name, p, int)
+      |                                  ^~~~~~~~~~~~~
+./include/linux/moduleparam.h:150:9: note: in expansion of macro ‘param_check_int’
+  150 |         param_check_##type(name, &(value));                                \
+      |         ^~~~~~~~~~~~
+./include/linux/moduleparam.h:127:9: note: in expansion of macro ‘module_param_named’
+  127 |         module_param_named(name, name, type, perm)
+      |         ^~~~~~~~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:84:1: note: in expansion of macro ‘module_param’
+   84 | module_param(nr_devs, int, 0);  /* FIXME check perms */
+      | ^~~~~~~~~~~~
+./include/linux/moduleparam.h:409:45: note: previous definition of ‘__check_nr_devs’ with type ‘int *(void)’
+  409 |         static inline type __always_unused *__check_##name(void) { return(p); }
+      |                                             ^~~~~~~~
+./include/linux/moduleparam.h:429:34: note: in expansion of macro ‘__param_check’
+  429 | #define param_check_int(name, p) __param_check(name, p, int)
+      |                                  ^~~~~~~~~~~~~
+./include/linux/moduleparam.h:150:9: note: in expansion of macro ‘param_check_int’
+  150 |         param_check_##type(name, &(value));                                \
+      |         ^~~~~~~~~~~~
+./include/linux/moduleparam.h:127:9: note: in expansion of macro ‘module_param_named’
+  127 |         module_param_named(name, name, type, perm)
+      |         ^~~~~~~~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:83:1: note: in expansion of macro ‘module_param’
+   83 | module_param(nr_devs, int, S_IRUGO);
+      | ^~~~~~~~~~~~
+./include/linux/moduleparam.h:289:27: error: redefinition of ‘__param_str_nr_devs’
+  289 |         static const char __param_str_##name[] = prefix #name;          \
+      |                           ^~~~~~~~~~~~
+./include/linux/moduleparam.h:176:9: note: in expansion of macro ‘__module_param_call’
+  176 |         __module_param_call(MODULE_PARAM_PREFIX, name, ops, arg, perm, -1, 0)
+      |         ^~~~~~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:151:9: note: in expansion of macro ‘module_param_cb’
+  151 |         module_param_cb(name, &param_ops_##type, &value, perm);            \
+      |         ^~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:127:9: note: in expansion of macro ‘module_param_named’
+  127 |         module_param_named(name, name, type, perm)
+      |         ^~~~~~~~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:84:1: note: in expansion of macro ‘module_param’
+   84 | module_param(nr_devs, int, 0);  /* FIXME check perms */
+      | ^~~~~~~~~~~~
+./include/linux/moduleparam.h:289:27: note: previous definition of ‘__param_str_nr_devs’ with type ‘const char[8]’
+  289 |         static const char __param_str_##name[] = prefix #name;          \
+      |                           ^~~~~~~~~~~~
+./include/linux/moduleparam.h:176:9: note: in expansion of macro ‘__module_param_call’
+  176 |         __module_param_call(MODULE_PARAM_PREFIX, name, ops, arg, perm, -1, 0)
+      |         ^~~~~~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:151:9: note: in expansion of macro ‘module_param_cb’
+  151 |         module_param_cb(name, &param_ops_##type, &value, perm);            \
+      |         ^~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:127:9: note: in expansion of macro ‘module_param_named’
+  127 |         module_param_named(name, name, type, perm)
+      |         ^~~~~~~~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:83:1: note: in expansion of macro ‘module_param’
+   83 | module_param(nr_devs, int, S_IRUGO);
+      | ^~~~~~~~~~~~
+./include/linux/moduleparam.h:290:56: error: redefinition of ‘__param_nr_devs’
+  290 |         static struct kernel_param __moduleparam_const __param_##name   \
+      |                                                        ^~~~~~~~
+./include/linux/moduleparam.h:176:9: note: in expansion of macro ‘__module_param_call’
+  176 |         __module_param_call(MODULE_PARAM_PREFIX, name, ops, arg, perm, -1, 0)
+      |         ^~~~~~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:151:9: note: in expansion of macro ‘module_param_cb’
+  151 |         module_param_cb(name, &param_ops_##type, &value, perm);            \
+      |         ^~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:127:9: note: in expansion of macro ‘module_param_named’
+  127 |         module_param_named(name, name, type, perm)
+      |         ^~~~~~~~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:84:1: note: in expansion of macro ‘module_param’
+   84 | module_param(nr_devs, int, 0);  /* FIXME check perms */
+      | ^~~~~~~~~~~~
+./include/linux/moduleparam.h:290:56: note: previous definition of ‘__param_nr_devs’ with type ‘const struct kernel_param’
+  290 |         static struct kernel_param __moduleparam_const __param_##name   \
+      |                                                        ^~~~~~~~
+./include/linux/moduleparam.h:176:9: note: in expansion of macro ‘__module_param_call’
+  176 |         __module_param_call(MODULE_PARAM_PREFIX, name, ops, arg, perm, -1, 0)
+      |         ^~~~~~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:151:9: note: in expansion of macro ‘module_param_cb’
+  151 |         module_param_cb(name, &param_ops_##type, &value, perm);            \
+      |         ^~~~~~~~~~~~~~~
+./include/linux/moduleparam.h:127:9: note: in expansion of macro ‘module_param_named’
+  127 |         module_param_named(name, name, type, perm)
+      |         ^~~~~~~~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:83:1: note: in expansion of macro ‘module_param’
+   83 | module_param(nr_devs, int, S_IRUGO);
+      | ^~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:114:1: error: unknown type name ‘buffer’; use ‘struct’ keyword to refer to the type
+  114 | buffer setup_buffer( void ) {
+      | ^~~~~~
+      | struct
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:114:8: error: conflicting types for ‘setup_buffer’; have ‘int(void)’
+  114 | buffer setup_buffer( void ) {
+      |        ^~~~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:30:15: note: previous declaration of ‘setup_buffer’ with type ‘struct buffer(void)’
+   30 | struct buffer setup_buffer( void );
+      |               ^~~~~~~~~~~~
+In file included from ./include/linux/swait.h:8,
+                 from ./include/linux/completion.h:12,
+                 from ./include/linux/mm_types.h:14,
+                 from ./include/linux/buildid.h:5,
+                 from ./include/linux/module.h:14,
+                 from /home/ymerdrys/dm510/assignment2/dm510_dev.c:9:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c: In function ‘setup_buffer’:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:132:34: error: ‘buf’ is a pointer; did you mean to use ‘->’?
+  132 |         init_waitqueue_head(&(buf.inq));
+      |                                  ^
+./include/linux/wait.h:70:40: note: in definition of macro ‘init_waitqueue_head’
+   70 |                 __init_waitqueue_head((wq_head), #wq_head, &__key);             \
+      |                                        ^~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:133:34: error: ‘buf’ is a pointer; did you mean to use ‘->’?
+  133 |         init_waitqueue_head(&(buf.outq));
+      |                                  ^
+./include/linux/wait.h:70:40: note: in definition of macro ‘init_waitqueue_head’
+   70 |                 __init_waitqueue_head((wq_head), #wq_head, &__key);             \
+      |                                        ^~~~~~~
+In file included from ./include/linux/seqlock.h:19,
+                 from ./include/linux/mm_types.h:20,
+                 from ./include/linux/buildid.h:5,
+                 from ./include/linux/module.h:14,
+                 from /home/ymerdrys/dm510/assignment2/dm510_dev.c:9:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:134:23: error: ‘buf’ is a pointer; did you mean to use ‘->’?
+  134 |         mutex_init(buf.mutex);
+      |                       ^
+./include/linux/mutex.h:106:23: note: in definition of macro ‘mutex_init’
+  106 |         __mutex_init((mutex), #mutex, &__key);                          \
+      |                       ^~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:141:16: warning: returning ‘struct buffer *’ from a function with return type ‘int’ makes integer from pointer without a cast [-Wint-conversion]
+  141 |         return buf;
+      |                ^~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c: At top level:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:149:13: error: conflicting types for ‘setup_cdev’; have ‘void(struct dm510_device *, int)’
+  149 | static void setup_cdev(struct dm510_device *dev, int index) {
+      |             ^~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:31:13: note: previous declaration of ‘setup_cdev’ with type ‘void(struct dm510_device *, int)’
+   31 | static void setup_cdev(struct dm510_device *dev, int index);
+      |             ^~~~~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c: In function ‘dm510_init_module’:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:170:17: warning: assignment to ‘struct buffer *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+  170 |         buffer0 = setup_buffer();
+      |                 ^
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:171:17: warning: assignment to ‘struct buffer *’ from ‘int’ makes pointer from integer without a cast [-Wint-conversion]
+  171 |         buffer1 = setup_buffer();
+      |                 ^
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:198:17: error: implicit declaration of function ‘scull_cleanup_module’; did you mean ‘cleanup_module’? [-Werror=implicit-function-declaration]
+  198 |                 scull_cleanup_module();
+      |                 ^~~~~~~~~~~~~~~~~~~~
+      |                 cleanup_module
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:203:35: error: incompatible type for argument 1 of ‘iminor’
+  203 |                 if (iminor(devices[i]) == 0) {
+      |                            ~~~~~~~^~~
+      |                                   |
+      |                                   struct dm510_device
+In file included from /home/ymerdrys/dm510/assignment2/dm510_dev.c:13:
+./include/linux/fs.h:936:51: note: expected ‘const struct inode *’ but argument is of type ‘struct dm510_device’
+  936 | static inline unsigned iminor(const struct inode *inode)
+      |                               ~~~~~~~~~~~~~~~~~~~~^~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:204:47: error: incompatible types when assigning to type ‘struct buffer’ from type ‘struct buffer *’
+  204 |                         devices[i].bufferIn = buffer0;
+      |                                               ^~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:205:48: error: incompatible types when assigning to type ‘struct buffer’ from type ‘struct buffer *’
+  205 |                         devices[i].bufferOut = buffer1;
+      |                                                ^~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:207:47: error: incompatible types when assigning to type ‘struct buffer’ from type ‘struct buffer *’
+  207 |                         devices[i].bufferIn = buffer1;
+      |                                               ^~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:208:48: error: incompatible types when assigning to type ‘struct buffer’ from type ‘struct buffer *’
+  208 |                         devices[i].bufferOut = buffer0;
+      |                                                ^~~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c: In function ‘dm510_open’:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:268:30: error: invalid type argument of ‘->’ (have ‘struct buffer’)
+  268 |                 dev->bufferIn->nreaders++;              // Here it gets interesting...
+      |                              ^~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:270:31: error: invalid type argument of ‘->’ (have ‘struct buffer’)
+  270 |                 dev->bufferOut->nwriters++;             // to check these values?
+      |                               ^~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c: In function ‘dm510_release’:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:295:30: error: invalid type argument of ‘->’ (have ‘struct buffer’)
+  295 |                 dev->bufferIn->nreaders--;
+      |                              ^~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:297:31: error: invalid type argument of ‘->’ (have ‘struct buffer’)
+  297 |                 dev->bufferOut->nwriters--;
+      |                               ^~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c: In function ‘dm510_read’:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:318:32: error: incompatible types when initializing type ‘struct buffer *’ using type ‘struct buffer’
+  318 |         struct buffer *bufIn = dev->bufferIn;
+      |                                ^~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:327:17: error: implicit declaration of function ‘PDEBUG’ [-Werror=implicit-function-declaration]
+  327 |                 PDEBUG("\"%s\" reading: going to sleep\n", current->comm);
+      |                 ^~~~~~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c: In function ‘dm510_write’:
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:369:51: warning: dereferencing ‘void *’ pointer
+  369 |         struct buffer *bufOut = filp->private_data->bufferOut;
+      |                                                   ^~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:369:51: error: request for member ‘bufferOut’ in something not a structure or union
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:393:38: error: ‘struct buffer’ has no member named ‘buffer’; did you mean ‘buffersize’?
+  393 |                 bufOut->wp = bufOut->buffer; /* wrapped */
+      |                                      ^~~~~~
+      |                                      buffersize
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:400:19: error: ‘struct buffer’ has no member named ‘async_queue’
+  400 |         if (bufOut->async_queue)
+      |                   ^~
+/home/ymerdrys/dm510/assignment2/dm510_dev.c:401:36: error: ‘struct buffer’ has no member named ‘async_queue’
+  401 |                 kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN);
+      |                                    ^~
+cc1: some warnings being treated as errors
+make[3]: *** [scripts/Makefile.build:243: /home/ymerdrys/dm510/assignment2/dm510_dev.o] Error 1
+make[2]: *** [/home/ymerdrys/dm510/linux-6.6.9/Makefile:1913: /home/ymerdrys/dm510/assignment2] Error 2
+make[1]: *** [Makefile:234: __sub-make] Error 2
+make[1]: Leaving directory '/home/ymerdrys/dm510/linux-6.6.9'
+make: *** [Makefile:14: modules] Error 2
