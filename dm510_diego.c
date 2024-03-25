@@ -27,7 +27,7 @@
 	static ssize_t dm510_write( struct file*, const char*, size_t, loff_t* );
 	long dm510_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
-	struct *buffer setup_buffer( void );
+	struct buffer* setup_buffer( void );
 	static void setup_cdev(struct dm510_device *dev, int index);
 	static int spacefree(struct buffer *buf);
 	static int getwritespace(struct buffer *buf, struct file *filp);
@@ -104,14 +104,43 @@
 	};
 
 
+	/* How much space is free? */
+	static int spacefree(struct buffer *buf) {
+		if (buf->rp == buf->wp)
+			return buf->buffersize - 1;
+		return ((buf->rp + buf->buffersize - buf->wp) % buf->buffersize) - 1;
+	}
 
+
+	/* Wait for space for writing; caller must hold device semaphore.  On
+	* error the semaphore will be released before returning. */
+	static int getwritespace(struct buffer *buf, struct file *filp)
+	{
+		while (spacefree(buf) == 0) { /* full */
+			DEFINE_WAIT(wait);
+			
+			mutex_unlock(&buf->mutex);
+			if (filp->f_flags & O_NONBLOCK)
+				return -EAGAIN;
+			PDEBUG("\"%s\" writing: going to sleep\n",current->comm);
+			prepare_to_wait(&buf->outq, &wait, TASK_INTERRUPTIBLE);
+			if (spacefree(buf) == 0)
+				schedule();
+			finish_wait(&buf->outq, &wait);
+			if (signal_pending(current))
+				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
+			if (mutex_lock_interruptible(&buf->mutex))
+				return -ERESTARTSYS;
+		}
+		return 0;
+	}	
 
 
 
 
 
 	// Auxiliary function for initialising a single buffer. 
-	static struct *buffer setup_buffer( void ) {
+	struct buffer* setup_buffer( void ) {
 
 		static struct buffer *buf;
 
@@ -129,18 +158,43 @@
 		}
 
 		// Initialise stuff
-		init_waitqueue_head(&(buf.inq));
-		init_waitqueue_head(&(buf.outq));
-		mutex_init(buf.mutex);
+		init_waitqueue_head(&(buf -> inq));
+		init_waitqueue_head(&(buf -> outq));
+		mutex_init(buf->mutex);
 
 		// Initialise the offset pointers
 		buf->buffersize = buffer_size;
 		buf->end = buf->start + buf->buffersize;
 		buf->rp = buf->wp = buf->start; /* rd and wr from the beginning */
 
-		return *buf;
+		return buf;
 	}
 
+
+	/* Called when module is unloaded */
+	// or on failure
+	void dm510_cleanup_module( void ) {
+
+		int i;
+
+		kfree(buffer0->start);
+		kfree(buffer1->start);
+
+		kfree(buffer0);
+		kfree(buffer1);
+
+		if (!devices)
+			return; /* nothing else to release */
+
+		for (i = 0; i < nr_devs; i++) {
+			cdev_del(&devices[i].cdev);
+		}
+		kfree(devices);
+		unregister_chrdev_region(first_devno, nr_devs);
+		devices = NULL; /* pedantic */
+
+		printk(KERN_INFO "DM510: Module unloaded.\n");
+	}
 
 	// Auxiliary function to dm510_init_module
 	/*
@@ -195,7 +249,7 @@
 		first_devno = dev;
 		devices = kmalloc(nr_devs * sizeof(struct dm510_device), GFP_KERNEL);
 		if (!devices) {
-			scull_cleanup_module();
+			dm510_cleanup_module();
 			return -ENOMEM;
 		}
 		memset(devices, 0, nr_devs * sizeof(struct dm510_device));
@@ -219,30 +273,7 @@
 
 
 
-	/* Called when module is unloaded */
-	// or on failure
-	void dm510_cleanup_module( void ) {
-
-		int i;
-
-		kfree(buffer0->start);
-		kfree(buffer1->start);
-
-		kfree(buffer0);
-		kfree(buffer1);
-
-		if (!devices)
-			return; /* nothing else to release */
-
-		for (i = 0; i < nr_devs; i++) {
-			cdev_del(&devices[i].cdev);
-		}
-		kfree(devices);
-		unregister_chrdev_region(first_devno, nr_devs);
-		devices = NULL; /* pedantic */
-
-		printk(KERN_INFO "DM510: Module unloaded.\n");
-	}
+	
 
 
 
@@ -340,7 +371,7 @@
 			mutex_unlock (&dev->mutex);
 			return -EFAULT;
 		}
-		dev->bufferIn.rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
+		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
 		if (bufIn->rp == bufIn->end)
 			bufIn->rp = bufIn->start; /* wrapped */
 		mutex_unlock (&dev->mutex);
@@ -403,39 +434,9 @@
 		return count;
 	}
 
-	/* How much space is free? */
-	static int spacefree(struct buffer *buf) {
-		if (buf->rp == buf->wp)
-			return buf->buffersize - 1;
-		return ((buf->rp + buf->buffersize - buf->wp) % buf->buffersize) - 1;
-	}
+	
 
-	/* Wait for space for writing; caller must hold device semaphore.  On
-	* error the semaphore will be released before returning. */
-	static int getwritespace(struct buffer *buf, struct file *filp)
-	{
-		while (spacefree(buf) == 0) { /* full */
-			DEFINE_WAIT(wait);
-			
-			mutex_unlock(&buf->mutex);
-			if (filp->f_flags & O_NONBLOCK)
-				return -EAGAIN;
-			PDEBUG("\"%s\" writing: going to sleep\n",current->comm);
-			prepare_to_wait(&buf->outq, &wait, TASK_INTERRUPTIBLE);
-			if (spacefree(buf) == 0)
-				schedule();
-			finish_wait(&buf->outq, &wait);
-			if (signal_pending(current))
-				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
-			if (mutex_lock_interruptible(&buf->mutex))
-				return -ERESTARTSYS;
-		}
-		return 0;
-	}	
-
-
-
-
+	
 
 	/* called by system call icotl */ 
 	long dm510_ioctl( 
