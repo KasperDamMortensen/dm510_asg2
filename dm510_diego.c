@@ -28,7 +28,7 @@ static ssize_t dm510_write( struct file*, const char*, size_t, loff_t* );
 long dm510_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
 struct buffer setup_buffer( void );
-static void setup_cdev(struct device *dev, int index);
+static void setup_cdev(struct dm510_device *dev, int index);
 static int spacefree(struct buffer *buf);
 static int getwritespace(struct buffer *buf, struct file *filp);
 
@@ -44,18 +44,6 @@ static int getwritespace(struct buffer *buf, struct file *filp);
 
 
 
-
-
-
-// This is a device which reads from one buffer and writes into another. 
-// This is initialised in the open method.
-struct device {
-	struct buffer bufferIn;			// The buffer it reads from.
-	struct buffer bufferOut;		// The buffer it writes to.
-    struct cdev cdev;               /* Char device structure */		// Would this mean that buffer doesn't get a cdev? Probably
-    struct mutex mutex;             /* mutual exclusion semaphore */		// I think this should be included.
-}
-
 // This is a buffer which is accessed by one device for reading and another for writing.
 struct buffer {
         wait_queue_head_t inq, outq;       /* read and write queues */
@@ -66,6 +54,18 @@ struct buffer {
         // struct fasync_struct *async_queue; /* asynchronous readers */
         struct mutex mutex;                /* mutual exclusion semaphore */
 };
+
+
+// This is a device which reads from one buffer and writes into another. 
+// This is initialised in the open method.
+struct dm510_device {
+	struct buffer bufferIn;			// The buffer it reads from.
+	struct buffer bufferOut;		// The buffer it writes to.
+    struct cdev cdev;               /* Char device structure */		// Would this mean that buffer doesn't get a cdev? Probably
+    struct mutex mutex;             /* mutual exclusion semaphore */		// I think this should be included.
+};
+
+
 
 /* 
  * Our parameters which can be set at load time.
@@ -86,7 +86,7 @@ module_param(buffer_size, int, 0);
 
 // These are our two devices.
 // This variable gets used in the init function.
-static struct device *devices;
+static struct dm510_device *devices;
 
 // These are our two buffers.
 static struct buffer *buffer0;
@@ -113,7 +113,7 @@ static struct file_operations dm510_fops = {
 // Auxiliary function for initialising a single buffer. 
 struct buffer setup_buffer( void ) {
 
-	struct buffer *buf;
+	static struct buffer *buf;
 
 	// Allocate the structure
 	buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);	
@@ -146,7 +146,7 @@ struct buffer setup_buffer( void ) {
 /*
  * Set up a cdev entry.
  */
-static void setup_cdev(struct device *dev, int index) {
+static void setup_cdev(struct dm510_device *dev, int index) {
 	int err, devno = first_devno + index;
     
 	cdev_init(&dev->cdev, &dm510_fops);
@@ -193,12 +193,12 @@ int dm510_init_module( void ) {
 
 	// Here starts the code taken from scull_p_init.
 	first_devno = dev;
-	devices = kmalloc(nr_devs * sizeof(struct device), GFP_KERNEL);
+	devices = kmalloc(nr_devs * sizeof(struct dm510_device), GFP_KERNEL);
 	if (!devices) {
 		scull_cleanup_module();
 		return -ENOMEM;
 	}
-	memset(devices, 0, nr_devs * sizeof(struct device));
+	memset(devices, 0, nr_devs * sizeof(struct dm510_device));
 	for (i = 0; i < nr_devs; i++) {
 		if (iminor(devices[i]) == 0) {
 			devices[i].bufferIn = buffer0;
@@ -253,10 +253,10 @@ void dm510_cleanup_module( void ) {
 /* Called when a process tries to open the device file */
 static int dm510_open( struct inode *inode, struct file *filp ) {
 	
-	struct device *dev;	
+	struct dm510_device *dev;	
 
 	// Identify which device is being opened and save a pointer to it for future use
-	dev = container_of(inode->i_cdev, struct device, cdev);
+	dev = container_of(inode->i_cdev, struct dm510_device, cdev);
 	filp->private_data = dev;
 
 	if (mutex_lock_interruptible(&dev->mutex))
@@ -285,7 +285,7 @@ static int dm510_open( struct inode *inode, struct file *filp ) {
 /* Called when a process closes the device file. */
 static int dm510_release( struct inode *inode, struct file *filp ) {
 
-	struct device *dev = filp->private_data;
+	struct dm510_device *dev = filp->private_data;
 
 	/* remove this filp from the asynchronously notified filp's */
 	// scull_p_fasync(-1, filp, 0);		// What is this?
@@ -314,7 +314,7 @@ static ssize_t dm510_read( struct file *filp,
 {
 	// This function isn't finished! The locks are all messed up, we need for both dev and bufIn.
 	
-	struct device *dev = filp->private_data;
+	struct dm510_device *dev = filp->private_data;
 	struct buffer *bufIn = dev->bufferIn;
 
 	if (mutex_lock_interruptible(&dev->mutex))	// We also need to acquire the buffer's lock.
@@ -476,8 +476,9 @@ MODULE_LICENSE( "GPL" );
 // I'm going to dump code here to edit as much as I want
 
 // Functions that I am not sure we will need. 
-static int scull_p_fasync(int fd, struct file *filp, int mode);
-static int spacefree(struct scull_pipe *dev);
+
+//static int scull_p_fasync(int fd, struct file *filp, int mode);
+//static int spacefree(struct scull_pipe *dev);
 
 
 
