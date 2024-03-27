@@ -2,6 +2,10 @@
 	#ifndef __KERNEL__
 	#  define __KERNEL__
 	#endif
+	#  ifdef __KERNEL__
+     /* This one if debugging is on, and kernel space */
+	#    define PDEBUG(fmt, args...) printk( KERN_DEBUG "scull: " fmt, ## args)
+	#endif
 	#ifndef MODULE
 	#  define MODULE
 	#endif
@@ -21,7 +25,7 @@
 	#include <asm/switch_to.h>
 	#include <linux/cdev.h>
 	/* Prototypes - this would normally go in a .h file */
-	struct dm510_device; 
+	struct dm510_device; // is this needed???
 	static int dm510_open( struct inode*, struct file* );
 	static int dm510_release( struct inode*, struct file* );
 	static ssize_t dm510_read( struct file*, char*, size_t, loff_t* );
@@ -123,7 +127,7 @@
 			mutex_unlock(&buf->mutex);
 			if (filp->f_flags & O_NONBLOCK)
 				return -EAGAIN;
-			//PDEBUG("\"%s\" writing: going to sleep\n",current->comm);  					do we need?
+			PDEBUG("\"%s\" writing: going to sleep\n",current->comm);  					
 			prepare_to_wait(&buf->outq, &wait, TASK_INTERRUPTIBLE);
 			if (spacefree(buf) == 0)
 				schedule();
@@ -141,34 +145,31 @@
 
 
 	// Auxiliary function for initialising a single buffer. 
-	struct buffer* setup_buffer( void ) {
+	void setup_buffer(struct buffer *buf, int buffer_size) {
+    	// Allocate the structure
+    	*buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);
+    	if (!*buf) {
+        	
+    	}
+    	memset(*buf, 0, sizeof(struct buffer));
 
-		static struct buffer *buf;
+    	// Allocate the actual buffer
+    	(*buf)->start = kmalloc(buffer_size, GFP_KERNEL);
+    	if (!(*buf)->start) {
+        	kfree(*buf); // Free allocated structure before returning
+        	*buf = NULL;
+        	return;
+    	}
 
-		// Allocate the structure
-		buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);	
-		if (!buf) {
+    	// Initialise stuff
+    	init_waitqueue_head(&((*buf)->inq));
+    	init_waitqueue_head(&((*buf)->outq));
+    	mutex_init(&((*buf)->mutex));
 
-		}
-		memset(buf, 0, sizeof(struct buffer));
-
-		// Allocate the actual buffer 
-		buf->start = kmalloc(buffer_size, GFP_KERNEL);
-		if (!buf->start) {
-			return NULL; // changes temporarily becuase it causes error-ENOMEM;
-		}
-
-		// Initialise stuff
-		init_waitqueue_head(&(buf -> inq));
-		init_waitqueue_head(&(buf -> outq));
-		mutex_init(&buf->mutex);
-
-		// Initialise the offset pointers
-		buf->buffersize = buffer_size;
-		buf->end = buf->start + buf->buffersize;
-		buf->rp = buf->wp = buf->start; /* rd and wr from the beginning */
-
-		return buf;
+    	// Initialise the offset pointers
+    	(*buf)->buffersize = buffer_size;
+    	(*buf)->end = (*buf)->start + (*buf)->buffersize;
+    	(*buf)->rp = (*buf)->wp = (*buf)->start; /* rd and wr from the beginning */
 	}
 
 
@@ -184,9 +185,9 @@
 		kfree(buffer0);
 		kfree(buffer1);
 
-		if (!devices)
+		if (!devices){
 			return; /* nothing else to release */
-
+		}
 		for (i = 0; i < nr_devs; i++) {
 			cdev_del(&devices[i].cdev);
 		}
@@ -328,7 +329,7 @@
 		if (filp->f_mode & FMODE_WRITE)		// Not an else if?
 			dev->bufferOut->nwriters--;
 		mutex_unlock(&dev->mutex);
-			
+		printk(KERN_INFO "DM510: release \n");
 		return 0;
 	}
 
@@ -356,7 +357,7 @@
 			mutex_unlock(&dev->mutex); /* release the lock */
 			if (filp->f_flags & O_NONBLOCK)
 				return -EAGAIN;
-			//PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						do we need?
+			PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						
 			if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp)))
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
 			/* otherwise loop, but first reacquire the lock */
@@ -379,7 +380,8 @@
 
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
-		//PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
+		printk("\"%s\" did read %li bytes\n",current->comm, (long)count);
+		printk(KERN_INFO "DM510: read \n");
 		return count;	
 	}
 
@@ -415,7 +417,7 @@
 			count = min(count, (size_t)(bufOut->end - bufOut->wp)); /* to end-of-buf */
 		else /* the write pointer has wrapped, fill up to rp-1 */
 			count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
-		//PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, buf);			do we need?
+		PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, bufOut);			
 		if (copy_from_user(bufOut->wp, buffer, count)) {
 			mutex_unlock (&bufOut->mutex);
 			return -EFAULT;
@@ -431,7 +433,7 @@
 		/* and signal asynchronous readers, explained late in chapter 5 */
 		//if (bufOut->async_queue)																do we need this? causes error
 			//kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN); 									
-		//PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					do we need?
+		PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					
 		return count;
 	}
 
