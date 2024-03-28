@@ -22,13 +22,14 @@
 	#include <linux/cdev.h>
 	/* Prototypes - this would normally go in a .h file */
 	struct dm510_device; // is this needed???
+	struct buffer;
 	static int dm510_open( struct inode*, struct file* );
 	static int dm510_release( struct inode*, struct file* );
 	static ssize_t dm510_read( struct file*, char*, size_t, loff_t* );
 	static ssize_t dm510_write( struct file*, const char*, size_t, loff_t* );
 	long dm510_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
-	struct buffer* setup_buffer( void );
+	int setup_buffer(struct buffer **buf, int buffer_size);
 	static void setup_cdev(struct dm510_device *dev, int index);
 	static int spacefree(struct buffer *buf);
 	static int getwritespace(struct buffer *buf, struct file *filp);
@@ -140,35 +141,35 @@
 
 
 
-	// Auxiliary function for initialising a single buffer. 
-	struct buffer* setup_buffer( void ) {
+	// Auxiliary function for initialising a single buffer.
+	int setup_buffer(struct buffer **buf, int buffer_size) {
+    	// Allocate the structure
+    	*buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);
+    	if (!*buf) {
+        	// Indicate error
+        	return -ENOMEM;
+    	}
+    	memset(*buf, 0, sizeof(struct buffer));
 
-		static struct buffer *buf;
+    	// Allocate the actual buffer
+    	(*buf)->start = kmalloc(buffer_size, GFP_KERNEL);
+    	if (!(*buf)->start) {
+        	kfree(*buf); // Free allocated structure before returning
+        	*buf = NULL;
+        	return -ENOMEM;
+    	}
 
-		// Allocate the structure
-		buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);	
-		if (!buf) {
+    	// Initialise stuff
+    	init_waitqueue_head(&((*buf)->inq));
+    	init_waitqueue_head(&((*buf)->outq));
+    	mutex_init(&((*buf)->mutex));
 
-		}
-		memset(buf, 0, sizeof(struct buffer));
+    	// Initialise the offset pointers
+    	(*buf)->buffersize = buffer_size;
+    	(*buf)->end = (*buf)->start + (*buf)->buffersize;
+    	(*buf)->rp = (*buf)->wp = (*buf)->start; /* rd and wr from the beginning */
 
-		// Allocate the actual buffer 
-		buf->start = kmalloc(buffer_size, GFP_KERNEL);
-		if (!buf->start) {
-			return NULL; // changes temporarily becuase it causes error-ENOMEM;
-		}
-
-		// Initialise stuff
-		init_waitqueue_head(&(buf -> inq));
-		init_waitqueue_head(&(buf -> outq));
-		mutex_init(&buf->mutex);
-
-		// Initialise the offset pointers
-		buf->buffersize = buffer_size;
-		buf->end = buf->start + buf->buffersize;
-		buf->rp = buf->wp = buf->start; /* rd and wr from the beginning */
-
-		return buf;
+    	return 0; // Success
 	}
 
 
@@ -222,8 +223,16 @@
 		dev_t dev = 0;
 
 		// First initialise both buffers.
-		buffer0 = setup_buffer();
-		buffer1 = setup_buffer();
+		struct buffer *buffer0; // Declare a pointer to struct buffer
+		struct buffer *buffer1; // Declare a pointer to struct buffer
+		// Call setup_buffer function
+		int result0 = setup_buffer(&buffer0, buffer_size);
+		int result1 = setup_buffer(&buffer1, buffer_size);
+		// Check if setup_buffer succeeded
+		if (result0  != 0 || result1 != 0) {
+    		printk(KERN_ERR "Failed to setup buffer: error code %d\n", result);
+		}
+
 
 		// This part of the code makes the device. (No!)
 		// This part makes a dev_t, which is a number containing both a major and a minor number. 
