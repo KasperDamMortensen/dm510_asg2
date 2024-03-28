@@ -108,6 +108,7 @@
 
 	/* How much space is free? */
 	static int spacefree(struct buffer *buf) {
+		printk(KERN_INFO "DM510: sapcefree \n");
 		if (buf->rp == buf->wp)
 			return buf->buffersize - 1;
 		return ((buf->rp + buf->buffersize - buf->wp) % buf->buffersize) - 1;
@@ -134,6 +135,7 @@
 			if (mutex_lock_interruptible(&buf->mutex))
 				return -ERESTARTSYS;
 		}
+		printk(KERN_INFO "DM510: getwritespace \n");
 		return 0;
 	}	
 
@@ -147,6 +149,7 @@
     	*buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);
     	if (!*buf) {
         	// Indicate error
+			printk(KERN_INFO "DM510: setup buffer: failed\n");
         	return -ENOMEM;
     	}
     	memset(*buf, 0, sizeof(struct buffer));
@@ -156,6 +159,7 @@
     	if (!(*buf)->start) {
         	kfree(*buf); // Free allocated structure before returning
         	*buf = NULL;
+			printk(KERN_INFO "DM510: setup buffer failed2 \n");
         	return -ENOMEM;
     	}
 
@@ -168,7 +172,7 @@
     	(*buf)->buffersize = buffer_size;
     	(*buf)->end = (*buf)->start + (*buf)->buffersize;
     	(*buf)->rp = (*buf)->wp = (*buf)->start; /* rd and wr from the beginning */
-
+		printk(KERN_INFO "DM510: setupbuffer succes \n");
     	return 0; // Success
 	}
 
@@ -208,6 +212,7 @@
 		cdev_init(&dev->cdev, &dm510_fops);
 		dev->cdev.owner = THIS_MODULE;
 		err = cdev_add (&dev->cdev, devno, 1);
+		printk(KERN_INFO "DM510: setup cdev \n");
 		/* Fail gracefully if need be */
 		if (err)
 			printk(KERN_NOTICE "Error %d adding buffer%d", err, index);
@@ -338,7 +343,7 @@
 		if (filp->f_mode & FMODE_WRITE)		// Not an else if?
 			dev->bufferOut->nwriters--;
 		mutex_unlock(&dev->mutex);
-		printk(KERN_INFO "DM510: open \n");
+		printk(KERN_INFO "DM510: release \n");
 		return 0;
 	}
 
@@ -359,19 +364,26 @@
 		struct dm510_device *dev = filp->private_data;
 		struct buffer *bufIn = dev->bufferIn;
 
-		if (mutex_lock_interruptible(&dev->mutex))	// We also need to acquire the buffer's lock.
+		if (mutex_lock_interruptible(&dev->mutex)){	// We also need to acquire the buffer's lock.
+			printk(KERN_INFO "DM510: read f \n");
 			return -ERESTARTSYS;
-
+		}
 		while (bufIn->rp == bufIn->wp) { /* nothing to read */
 			mutex_unlock(&dev->mutex); /* release the lock */
-			if (filp->f_flags & O_NONBLOCK)
+			if (filp->f_flags & O_NONBLOCK){
+				printk(KERN_INFO "DM510: read f \n");
 				return -EAGAIN;
+			}
 			//PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						do we need?
-			if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp)))
+			if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp))){
+				printk(KERN_INFO "DM510: read f \n");
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
+			}
 			/* otherwise loop, but first reacquire the lock */
-			if (mutex_lock_interruptible(&dev->mutex))
+			if (mutex_lock_interruptible(&dev->mutex)){
+				printk(KERN_INFO "DM510: read f \n");
 				return -ERESTARTSYS;
+			}
 		}
 		/* ok, data is there, return something */
 		if (bufIn->wp > bufIn->rp)
@@ -380,16 +392,18 @@
 			count = min(count, (size_t)(bufIn->end - bufIn->rp));
 		if (copy_to_user(buf, bufIn->rp, count)) {
 			mutex_unlock (&dev->mutex);
+			printk(KERN_INFO "DM510: read f \n");
 			return -EFAULT;
 		}
 		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
-		if (bufIn->rp == bufIn->end)
+		if (bufIn->rp == bufIn->end){}
 			bufIn->rp = bufIn->start; /* wrapped */
 		mutex_unlock (&dev->mutex);
 
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
 		//PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
+		printk(KERN_INFO "DM510: read s \n");
 		return count;	
 	}
 
@@ -442,6 +456,7 @@
 		//if (bufOut->async_queue)																do we need this? causes error
 			//kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN); 									
 		//PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					do we need?
+		printk(KERN_INFO "DM510: write \n");
 		return count;
 	}
 
