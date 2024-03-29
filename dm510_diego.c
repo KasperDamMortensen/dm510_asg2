@@ -21,13 +21,15 @@
 	#include <asm/switch_to.h>
 	#include <linux/cdev.h>
 	/* Prototypes - this would normally go in a .h file */
+	struct dm510_device; // is this needed???
+	struct buffer;
 	static int dm510_open( struct inode*, struct file* );
 	static int dm510_release( struct inode*, struct file* );
 	static ssize_t dm510_read( struct file*, char*, size_t, loff_t* );
 	static ssize_t dm510_write( struct file*, const char*, size_t, loff_t* );
 	long dm510_ioctl(struct file *filp, unsigned int cmd, unsigned long arg);
 
-	struct buffer* setup_buffer( void );
+	int setup_buffer(struct buffer **buf, int buffer_size);
 	static void setup_cdev(struct dm510_device *dev, int index);
 	static int spacefree(struct buffer *buf);
 	static int getwritespace(struct buffer *buf, struct file *filp);
@@ -80,7 +82,7 @@
 	// I suppose that module_param allows you to modify some structure safely and easily...
 	module_param(major_number, int, S_IRUGO);
 	module_param(minor_number, int, S_IRUGO);
-	module_param(nr_devs, int, S_IRUGO);
+	//module_param(nr_devs, int, S_IRUGO); makes a lot of errors
 	module_param(nr_devs, int, 0);	/* FIXME check perms */
 	module_param(buffer_size, int, 0);
 
@@ -106,6 +108,7 @@
 
 	/* How much space is free? */
 	static int spacefree(struct buffer *buf) {
+		printk(KERN_INFO "DM510: sapcefree \n");
 		if (buf->rp == buf->wp)
 			return buf->buffersize - 1;
 		return ((buf->rp + buf->buffersize - buf->wp) % buf->buffersize) - 1;
@@ -122,7 +125,7 @@
 			mutex_unlock(&buf->mutex);
 			if (filp->f_flags & O_NONBLOCK)
 				return -EAGAIN;
-			PDEBUG("\"%s\" writing: going to sleep\n",current->comm);
+			//PDEBUG("\"%s\" writing: going to sleep\n",current->comm);  					do we need?
 			prepare_to_wait(&buf->outq, &wait, TASK_INTERRUPTIBLE);
 			if (spacefree(buf) == 0)
 				schedule();
@@ -132,6 +135,7 @@
 			if (mutex_lock_interruptible(&buf->mutex))
 				return -ERESTARTSYS;
 		}
+		printk(KERN_INFO "DM510: getwritespace \n");
 		return 0;
 	}	
 
@@ -139,35 +143,37 @@
 
 
 
-	// Auxiliary function for initialising a single buffer. 
-	struct buffer* setup_buffer( void ) {
+	// Auxiliary function for initialising a single buffer.
+	int setup_buffer(struct buffer **buf, int buffer_size) {
+    	// Allocate the structure
+    	*buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);
+    	if (!*buf) {
+        	// Indicate error
+			printk(KERN_INFO "DM510: setup buffer: failed\n");
+        	return -ENOMEM;
+    	}
+    	memset(*buf, 0, sizeof(struct buffer));
 
-		static struct buffer *buf;
+    	// Allocate the actual buffer
+    	(*buf)->start = kmalloc(buffer_size, GFP_KERNEL);
+    	if (!(*buf)->start) {
+        	kfree(*buf); // Free allocated structure before returning
+        	*buf = NULL;
+			printk(KERN_INFO "DM510: setup buffer failed2 \n");
+        	return -ENOMEM;
+    	}
 
-		// Allocate the structure
-		buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);	
-		if (!buf) {
+    	// Initialise stuff
+    	init_waitqueue_head(&((*buf)->inq));
+    	init_waitqueue_head(&((*buf)->outq));
+    	mutex_init(&((*buf)->mutex));
 
-		}
-		memset(buf, 0, sizeof(struct buffer));
-
-		// Allocate the actual buffer 
-		buf->start = kmalloc(buffer_size, GFP_KERNEL);
-		if (!buf->start) {
-			return -ENOMEM;
-		}
-
-		// Initialise stuff
-		init_waitqueue_head(&(buf -> inq));
-		init_waitqueue_head(&(buf -> outq));
-		mutex_init(buf->mutex);
-
-		// Initialise the offset pointers
-		buf->buffersize = buffer_size;
-		buf->end = buf->start + buf->buffersize;
-		buf->rp = buf->wp = buf->start; /* rd and wr from the beginning */
-
-		return buf;
+    	// Initialise the offset pointers
+    	(*buf)->buffersize = buffer_size;
+    	(*buf)->end = (*buf)->start + (*buf)->buffersize;
+    	(*buf)->rp = (*buf)->wp = (*buf)->start; /* rd and wr from the beginning */
+		printk(KERN_INFO "DM510: setupbuffer succes \n");
+    	return 0; // Success
 	}
 
 
@@ -183,9 +189,9 @@
 		kfree(buffer0);
 		kfree(buffer1);
 
-		if (!devices)
+		if (!devices){
 			return; /* nothing else to release */
-
+		}
 		for (i = 0; i < nr_devs; i++) {
 			cdev_del(&devices[i].cdev);
 		}
@@ -206,6 +212,7 @@
 		cdev_init(&dev->cdev, &dm510_fops);
 		dev->cdev.owner = THIS_MODULE;
 		err = cdev_add (&dev->cdev, devno, 1);
+		printk(KERN_INFO "DM510: setup cdev \n");
 		/* Fail gracefully if need be */
 		if (err)
 			printk(KERN_NOTICE "Error %d adding buffer%d", err, index);
@@ -221,8 +228,16 @@
 		dev_t dev = 0;
 
 		// First initialise both buffers.
-		buffer0 = setup_buffer();
-		buffer1 = setup_buffer();
+		struct buffer *buffer0; // Declare a pointer to struct buffer
+		struct buffer *buffer1; // Declare a pointer to struct buffer
+		// Call setup_buffer function
+		int result0 = setup_buffer(&buffer0, buffer_size);
+		int result1 = setup_buffer(&buffer1, buffer_size);
+		// Check if setup_buffer succeeded
+		if (result0  != 0 || result1 != 0) {
+    		printk(KERN_ERR "Failed to setup buffer: error code %d\n", result);
+		}
+
 
 		// This part of the code makes the device. (No!)
 		// This part makes a dev_t, which is a number containing both a major and a minor number. 
@@ -254,13 +269,13 @@
 		}
 		memset(devices, 0, nr_devs * sizeof(struct dm510_device));
 		for (i = 0; i < nr_devs; i++) {
-			if (iminor(devices[i]) == 0) {
+			//if (iminor(devices[i]) == 0) {
 				devices[i].bufferIn = buffer0;
 				devices[i].bufferOut = buffer1;
-			} else {		// (iminor(devices[i]) == 1)
+			//} else {		// (iminor(devices[i]) == 1)
 				devices[i].bufferIn = buffer1;
 				devices[i].bufferOut = buffer0;
-			}
+			//	}
 			mutex_init(&devices[i].mutex);
 			setup_cdev(devices + i, i);		
 		}
@@ -283,11 +298,11 @@
 
 	/* Called when a process tries to open the device file */
 	static int dm510_open( struct inode *inode, struct file *filp ) {
-		
-		struct dm510_device *dev;	
+	
+		struct device *dev;	
 
 		// Identify which device is being opened and save a pointer to it for future use
-		dev = container_of(inode->i_cdev, struct dm510_device, cdev);
+		dev = container_of(inode->i_cdev, struct device, cdev);
 		filp->private_data = dev;
 
 		if (mutex_lock_interruptible(&dev->mutex))
@@ -295,12 +310,25 @@
 
 		// Update the number of readers and writers 
 		/* use f_mode, not  f_flags: it's cleaner (fs/open.c tells why) */
-		if (filp->f_mode & FMODE_READ)
-			dev->bufferIn->nreaders++;		// Here it gets interesting...
-		if (filp->f_mode & FMODE_WRITE)		// Does it need the buffer's lock 
-			dev->bufferOut->nwriters++;		// to check these values?
+		// Here it gets interesting with the locks...
+		if (filp->f_mode & FMODE_READ) {
+			if (mutex_lock_interruptible(&dev->bufferIn->mutex)) {
+				mutex_unlock(&dev->mutex);
+				return -ERESTARTSYS;
+			}
+			dev->bufferIn->nreaders++;		
+			mutex_unlock(&dev->bufferIn->mutex);
+		}
+		if (filp->f_mode & FMODE_WRITE)	{
+			if (mutex_lock_interruptible(&dev->bufferOut->mutex)) {
+				mutex_unlock(&dev->mutex);
+				return -ERESTARTSYS;	
+			}
+			dev->bufferOut->nwriters++;
+			mutex_unlock(&dev->bufferOut->mutex);	
+		}	
 		mutex_unlock(&dev->mutex);
-
+	
 		// return nonseekable_open(inode, filp);		// Should this be used? 
 		return 0;
 	}
@@ -315,17 +343,29 @@
 
 	/* Called when a process closes the device file. */
 	static int dm510_release( struct inode *inode, struct file *filp ) {
-
-		struct dm510_device *dev = filp->private_data;
-
+	
+		struct device *dev = filp->private_data;
+	
 		/* remove this filp from the asynchronously notified filp's */
 		// scull_p_fasync(-1, filp, 0);		// What is this?
-
+	
 		mutex_lock(&dev->mutex);			// Not interruptible? No if statement or -ERESTARTSYS either...
-		if (filp->f_mode & FMODE_READ)
+		if (filp->f_mode & FMODE_READ) {
+			if (mutex_lock_interruptible(&dev->bufferIn->mutex)) {
+				mutex_unlock(&dev->mutex);
+				return -ERESTARTSYS;
+			}
 			dev->bufferIn->nreaders--;
-		if (filp->f_mode & FMODE_WRITE)		// Not an else if?
+			mutex_unlock(&dev->bufferIn->mutex);
+		}
+		if (filp->f_mode & FMODE_WRITE)	{
+			if (mutex_lock_interruptible(&dev->bufferOut->mutex)) {
+				mutex_unlock(&dev->mutex);
+				return -ERESTARTSYS;	
+			}
 			dev->bufferOut->nwriters--;
+			mutex_unlock(&dev->bufferOut->mutex);	
+		}	
 		mutex_unlock(&dev->mutex);
 			
 		return 0;
@@ -348,19 +388,26 @@
 		struct dm510_device *dev = filp->private_data;
 		struct buffer *bufIn = dev->bufferIn;
 
-		if (mutex_lock_interruptible(&dev->mutex))	// We also need to acquire the buffer's lock.
+		if (mutex_lock_interruptible(&dev->mutex)){	// We also need to acquire the buffer's lock.
+			printk(KERN_INFO "DM510: read f \n");
 			return -ERESTARTSYS;
-
+		}
 		while (bufIn->rp == bufIn->wp) { /* nothing to read */
 			mutex_unlock(&dev->mutex); /* release the lock */
-			if (filp->f_flags & O_NONBLOCK)
+			if (filp->f_flags & O_NONBLOCK){
+				printk(KERN_INFO "DM510: read f \n");
 				return -EAGAIN;
-			PDEBUG("\"%s\" reading: going to sleep\n", current->comm);
-			if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp)))
+			}
+			//PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						do we need?
+			if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp))){
+				printk(KERN_INFO "DM510: read f \n");
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
+			}
 			/* otherwise loop, but first reacquire the lock */
-			if (mutex_lock_interruptible(&dev->mutex))
+			if (mutex_lock_interruptible(&dev->mutex)){
+				printk(KERN_INFO "DM510: read f \n");
 				return -ERESTARTSYS;
+			}
 		}
 		/* ok, data is there, return something */
 		if (bufIn->wp > bufIn->rp)
@@ -369,16 +416,18 @@
 			count = min(count, (size_t)(bufIn->end - bufIn->rp));
 		if (copy_to_user(buf, bufIn->rp, count)) {
 			mutex_unlock (&dev->mutex);
+			printk(KERN_INFO "DM510: read f \n");
 			return -EFAULT;
 		}
 		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
-		if (bufIn->rp == bufIn->end)
+		if (bufIn->rp == bufIn->end){}
 			bufIn->rp = bufIn->start; /* wrapped */
 		mutex_unlock (&dev->mutex);
 
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
-		PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
+		//PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
+		printk(KERN_INFO "DM510: read s \n");
 		return count;	
 	}
 
@@ -390,14 +439,14 @@
 
 	/* Called when a process writes to dev file */
 	static ssize_t dm510_write( struct file *filp,
-		const char *buf,/* The buffer to get data from      */
+		const char *buffer,/* The buffer to get data from      */
 		size_t count,   /* The max number of bytes to write */
 		loff_t *f_pos )  /* The offset in the file           */
 	{
 
 		/* write code belongs here */	
 
-		struct buffer *bufOut = filp->private_data->bufferOut;
+		struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
 		int result;
 
 		if (mutex_lock_interruptible(&bufOut->mutex))
@@ -414,23 +463,24 @@
 			count = min(count, (size_t)(bufOut->end - bufOut->wp)); /* to end-of-buf */
 		else /* the write pointer has wrapped, fill up to rp-1 */
 			count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
-		PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, buf);
-		if (copy_from_user(bufOut->wp, buf, count)) {
+		//PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, buf);			do we need?
+		if (copy_from_user(bufOut->wp, buffer, count)) {
 			mutex_unlock (&bufOut->mutex);
 			return -EFAULT;
 		}
 		bufOut->wp += count;
 		if (bufOut->wp == bufOut->end)
-			bufOut->wp = bufOut->buffer; /* wrapped */
+			bufOut->wp = bufOut->start; /* wrapped */
 		mutex_unlock(&bufOut->mutex);
 
 		/* finally, awake any reader */
 		wake_up_interruptible(&bufOut->inq);  /* blocked in read() and select() */
 
 		/* and signal asynchronous readers, explained late in chapter 5 */
-		if (bufOut->async_queue)
-			kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN);
-		PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);
+		//if (bufOut->async_queue)																do we need this? causes error
+			//kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN); 									
+		//PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					do we need?
+		printk(KERN_INFO "DM510: write \n");
 		return count;
 	}
 
@@ -473,6 +523,11 @@
 
 
 	// ================ DUMPSTER =================================
+	// code ideas:
+	//setup_dev and setup_buffer should maybe be void
+	//in init we need to make an inode, because iminor() only works on that type
+	// do we  need pdebug???, if we do we need to include i think
+
 
 	// I'm going to dump code here to edit as much as I want
 
