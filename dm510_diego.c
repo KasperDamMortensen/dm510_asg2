@@ -106,6 +106,34 @@
 	};
 
 
+
+
+	// A function to make double locking more elegant.
+	// 0 for reading and 1 for writing
+	// Returns 0 if successful or the error number otherwise
+	static int acquire_locks(struct dm510_device *dev, int mode) {
+
+		struct buffer *buf;
+
+		if (mode == 0) {
+			buf = dev->bufferIn;
+		}
+		else if (mode == 1) {
+			buf = dev->bufferOut;
+		}
+
+		if (mutex_lock_interruptible(&dev->mutex))
+			return -ERESTARTSYS;
+		if (mutex_lock_interruptible(&buf->mutex)) {
+			mutex_unlock(&dev->mutex);
+			return -ERESTARTSYS;	
+		}
+
+		printk(KERN_INFO "DM510: Successfully acquired locks \n");
+		return 0;
+	}
+
+
 	/* How much space is free? */
 	static int spacefree(struct buffer *buf) {
 		printk(KERN_INFO "DM510: sapcefree \n");
@@ -238,8 +266,6 @@
     		printk(KERN_ERR "Failed to setup buffer: error code %d\n", result);
 		}
 
-
-		// This part of the code makes the device. (No!)
 		// This part makes a dev_t, which is a number containing both a major and a minor number. 
 		// And it then registers them as belonging to a device. If the chosen major is available, it is used.
 		// Otherwise a new one gets assigned by the kernel. 
@@ -385,6 +411,7 @@
 	{
 		// This function isn't finished! The locks are all messed up, we need for both dev and bufIn.
 		
+		int lock_check;
 		struct dm510_device *dev = filp->private_data;
 		struct buffer *bufIn = dev->bufferIn;
 
@@ -392,8 +419,15 @@
 			printk(KERN_INFO "DM510: read f \n");
 			return -ERESTARTSYS;
 		}
+
+		lock_check = acquire_locks(dev, 0);
+		if (lock_check != 0) {
+			return lock_check;
+		}
+
 		while (bufIn->rp == bufIn->wp) { /* nothing to read */
-			mutex_unlock(&dev->mutex); /* release the lock */
+			mutex_unlock(&dev->mutex); /* release the locks */
+			mutex_unlock(&bufIn->mutex);
 			if (filp->f_flags & O_NONBLOCK){
 				printk(KERN_INFO "DM510: read f \n");
 				return -EAGAIN;
@@ -403,10 +437,10 @@
 				printk(KERN_INFO "DM510: read f \n");
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
 			}
-			/* otherwise loop, but first reacquire the lock */
-			if (mutex_lock_interruptible(&dev->mutex)){
-				printk(KERN_INFO "DM510: read f \n");
-				return -ERESTARTSYS;
+			/* otherwise loop, but first reacquire the locks */
+			lock_check = acquire_locks(dev, 0);
+			if (lock_check != 0) {
+				return lock_check;
 			}
 		}
 		/* ok, data is there, return something */
@@ -416,6 +450,7 @@
 			count = min(count, (size_t)(bufIn->end - bufIn->rp));
 		if (copy_to_user(buf, bufIn->rp, count)) {
 			mutex_unlock (&dev->mutex);
+			mutex_unlock (&bufIn->mutex);			
 			printk(KERN_INFO "DM510: read f \n");
 			return -EFAULT;
 		}
@@ -423,6 +458,7 @@
 		if (bufIn->rp == bufIn->end){}
 			bufIn->rp = bufIn->start; /* wrapped */
 		mutex_unlock (&dev->mutex);
+		mutex_unlock (&bufIn->mutex);
 
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
@@ -446,12 +482,14 @@
 
 		/* write code belongs here */	
 
-		struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
-		int result;
+		struct dm510_device *dev = filp->private_data; 
+		struct buffer *bufOut = dev->bufferOut
+		int result, lock_check;
 
-		if (mutex_lock_interruptible(&bufOut->mutex))
-			return -ERESTARTSYS;
-
+		lock_check = acquire_locks(dev, 1);
+		if (lock_check != 0) {
+			return lock_check;
+		}
 		/* Make sure there's space to write */
 		result = getwritespace(bufOut, filp);
 		if (result)				// ??
@@ -465,12 +503,14 @@
 			count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
 		//PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, buf);			do we need?
 		if (copy_from_user(bufOut->wp, buffer, count)) {
-			mutex_unlock (&bufOut->mutex);
+			mutex_unlock(&dev->mutex);
+			mutex_unlock(&bufOut->mutex);
 			return -EFAULT;
 		}
 		bufOut->wp += count;
 		if (bufOut->wp == bufOut->end)
 			bufOut->wp = bufOut->start; /* wrapped */
+		mutex_unlock(&dev->mutex);
 		mutex_unlock(&bufOut->mutex);
 
 		/* finally, awake any reader */
@@ -524,8 +564,8 @@
 
 	// ================ DUMPSTER =================================
 	// code ideas:
-	//setup_dev and setup_buffer should maybe be void
-	//in init we need to make an inode, because iminor() only works on that type
+	// setup_dev and setup_buffer should maybe be void
+	// in init we need to make an inode, because iminor() only works on that type
 	// do we  need pdebug???, if we do we need to include i think
 
 
@@ -534,7 +574,6 @@
 	// Functions that I am not sure we will need. 
 
 	//static int scull_p_fasync(int fd, struct file *filp, int mode);
-	//static int spacefree(struct scull_pipe *dev);
 
 
 
