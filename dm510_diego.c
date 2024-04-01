@@ -61,8 +61,6 @@
 	// This is a device which reads from one buffer and writes into another. 
 	// This is initialised in the open method.
 	struct dm510_device {
-		struct buffer *bufferIn;			// The buffer it reads from.
-		struct buffer *bufferOut;		// The buffer it writes to.
 		struct cdev cdev;               /* Char device structure */		// Would this mean that buffer doesn't get a cdev? Probably
 		struct mutex mutex;             /* mutual exclusion semaphore */		// I think this should be included.
 	};
@@ -107,20 +105,9 @@
 
 
 
-
-	// A function to make double locking more elegant.
-	// 0 for reading and 1 for writing
+	// A function to make double locking more elegant
 	// Returns 0 if successful or the error number otherwise
-	static int acquire_locks(struct dm510_device *dev, int mode) {
-
-		struct buffer *buf;
-
-		if (mode == 0) {
-			buf = dev->bufferIn;
-		}
-		else if (mode == 1) {
-			buf = dev->bufferOut;
-		}
+	static int acquire_locks(struct dm510_device *dev, struct buffer *buf) {
 
 		if (mutex_lock_interruptible(&dev->mutex))
 			return -ERESTARTSYS;
@@ -145,11 +132,15 @@
 
 	/* Wait for space for writing; caller must hold device semaphore.  On
 	* error the semaphore will be released before returning. */
-	static int getwritespace(struct buffer *buf, struct file *filp)
-	{
+	static int getwritespace(struct buffer *buf, struct file *filp) {
+
+		struct dm510_device *dev = filp->private_data; 
+		int lock_check;
+
 		while (spacefree(buf) == 0) { /* full */
 			DEFINE_WAIT(wait);
 			
+			mutex_unlock(&dev->mutex);
 			mutex_unlock(&buf->mutex);
 			if (filp->f_flags & O_NONBLOCK)
 				return -EAGAIN;
@@ -160,8 +151,12 @@
 			finish_wait(&buf->outq, &wait);
 			if (signal_pending(current))
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
-			if (mutex_lock_interruptible(&buf->mutex))
-				return -ERESTARTSYS;
+
+			// Reacquire the locks
+			lock_check = acquire_locks(dev, bufOut);
+			if (lock_check != 0) {
+				return lock_check;
+			}
 		}
 		printk(KERN_INFO "DM510: getwritespace \n");
 		return 0;
@@ -173,11 +168,12 @@
 
 	// Auxiliary function for initialising a single buffer.
 	int setup_buffer(struct buffer **buf, int buffer_size) {
-    	// Allocate the structure
+    	
+		// Allocate the structure
     	*buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);
     	if (!*buf) {
         	// Indicate error
-			printk(KERN_INFO "DM510: setup buffer: failed\n");
+			printk(KERN_INFO "DM510: setup buffer failed\n");
         	return -ENOMEM;
     	}
     	memset(*buf, 0, sizeof(struct buffer));
@@ -243,7 +239,7 @@
 		printk(KERN_INFO "DM510: setup cdev \n");
 		/* Fail gracefully if need be */
 		if (err)
-			printk(KERN_NOTICE "Error %d adding buffer%d", err, index);
+			printk(KERN_NOTICE "Error %d adding device%d", err, index);
 	}
 
 
@@ -251,7 +247,6 @@
 	/* called when module is loaded */
 	int dm510_init_module( void ) {
 
-		// Here starts the code taken from scull_init_module.
 		int result, i;
 		dev_t dev = 0;
 
@@ -263,19 +258,15 @@
 		int result1 = setup_buffer(&buffer1, buffer_size);
 		// Check if setup_buffer succeeded
 		if (result0  != 0 || result1 != 0) {
-    		printk(KERN_ERR "Failed to setup buffer: error code %d\n", result);
+    		printk(KERN_ERR "Failed to setup buffer: error code %d\n", result); // Should this be result?
 		}
 
 		// This part makes a dev_t, which is a number containing both a major and a minor number. 
 		// And it then registers them as belonging to a device. If the chosen major is available, it is used.
 		// Otherwise a new one gets assigned by the kernel. 
-		/*
-		* Get a range of minor numbers to work with, asking for a dynamic
-		* major unless directed otherwise at load time.
-		*/
 		if (major_number) {
 			dev = MKDEV(major_number, minor_number);
-			result = register_chrdev_region(dev, nr_devs, "DM510"); // I replace "scull" with "DM510"
+			result = register_chrdev_region(dev, nr_devs, "DM510"); 
 		} else {
 			result = alloc_chrdev_region(&dev, minor_number, nr_devs,
 					"DM510");
@@ -286,7 +277,7 @@
 			return result;
 		}
 
-		// Here starts the code taken from scull_p_init.
+		// Allocates and initialises the devices
 		first_devno = dev;
 		devices = kmalloc(nr_devs * sizeof(struct dm510_device), GFP_KERNEL);
 		if (!devices) {
@@ -295,13 +286,6 @@
 		}
 		memset(devices, 0, nr_devs * sizeof(struct dm510_device));
 		for (i = 0; i < nr_devs; i++) {
-			//if (iminor(devices[i]) == 0) {
-				devices[i].bufferIn = buffer0;
-				devices[i].bufferOut = buffer1;
-			//} else {		// (iminor(devices[i]) == 1)
-				devices[i].bufferIn = buffer1;
-				devices[i].bufferOut = buffer0;
-			//	}
 			mutex_init(&devices[i].mutex);
 			setup_cdev(devices + i, i);		
 		}
@@ -314,54 +298,51 @@
 
 
 
-	
-
-
-
-
-
-
-
 	/* Called when a process tries to open the device file */
 	static int dm510_open( struct inode *inode, struct file *filp ) {
 	
 		struct device *dev;	
+		struct buffer *buf;
+		int minor, lock_check;
 
-		// Identify which device is being opened and save a pointer to it for future use
+		// Identify which device is being opened and save a pointer to it
 		dev = container_of(inode->i_cdev, struct device, cdev);
 		filp->private_data = dev;
 
-		if (mutex_lock_interruptible(&dev->mutex))
-			return -ERESTARTSYS;
+		// Identify which buffer is being used and save a pointer to it
+		minor = iminor(inode);
 
-		// Update the number of readers and writers 
-		/* use f_mode, not  f_flags: it's cleaner (fs/open.c tells why) */
-		// Here it gets interesting with the locks...
-		if (filp->f_mode & FMODE_READ) {
-			if (mutex_lock_interruptible(&dev->bufferIn->mutex)) {
-				mutex_unlock(&dev->mutex);
-				return -ERESTARTSYS;
+		if (minor == 0) {
+			if (filp->f_mode & FMODE_READ) {
+				buf = buffer0;
+			} else if (filp->f_mode & FMODE_WRITE) {
+				buf = buffer1;
 			}
-			dev->bufferIn->nreaders++;		
-			mutex_unlock(&dev->bufferIn->mutex);
+		} else if (minor == 1) {
+			if (filp->f_mode & FMODE_READ) {
+				buf = buffer1;
+			} else if (filp->f_mode & FMODE_WRITE) {
+				buf = buffer0;
+			}
 		}
-		if (filp->f_mode & FMODE_WRITE)	{
-			if (mutex_lock_interruptible(&dev->bufferOut->mutex)) {
-				mutex_unlock(&dev->mutex);
-				return -ERESTARTSYS;	
-			}
-			dev->bufferOut->nwriters++;
-			mutex_unlock(&dev->bufferOut->mutex);	
-		}	
+
+		// Acquire the locks and update the number of readers and writers
+		lock_check = acquire_locks(dev, buf);
+		if (lock_check != 0) {
+			return lock_check;
+		}
+		if (filp->f_mode & FMODE_READ) {
+			buf->nreaders++;
+		}
+		if (filp->f_mode & FMODE_WRITE) {
+			buf->nwriters++;
+		}
 		mutex_unlock(&dev->mutex);
-	
+		mutex_unlock(&buf->mutex);
+
 		// return nonseekable_open(inode, filp);		// Should this be used? 
 		return 0;
 	}
-
-
-
-
 
 
 
@@ -371,33 +352,49 @@
 	static int dm510_release( struct inode *inode, struct file *filp ) {
 	
 		struct device *dev = filp->private_data;
+		struct buffer *buf;
+		int minor, lock_check;
 	
 		/* remove this filp from the asynchronously notified filp's */
 		// scull_p_fasync(-1, filp, 0);		// What is this?
+
+		// MAYBE IMPORTANT NOTE:
+		// The original function taken from pipe.c used mutex_lock instead of mutex_lock_interruptible.
+		// I don't know why. I changed it to be able to use acquire_locks.
 	
-		mutex_lock(&dev->mutex);			// Not interruptible? No if statement or -ERESTARTSYS either...
-		if (filp->f_mode & FMODE_READ) {
-			if (mutex_lock_interruptible(&dev->bufferIn->mutex)) {
-				mutex_unlock(&dev->mutex);
-				return -ERESTARTSYS;
+		// Identify which buffer is being used and save a pointer to it
+		minor = iminor(inode);
+
+		if (minor == 0) {
+			if (filp->f_mode & FMODE_READ) {
+				buf = buffer0;
+			} else if (filp->f_mode & FMODE_WRITE) {
+				buf = buffer1;
 			}
-			dev->bufferIn->nreaders--;
-			mutex_unlock(&dev->bufferIn->mutex);
+		} else if (minor == 1) {
+			if (filp->f_mode & FMODE_READ) {
+				buf = buffer1;
+			} else if (filp->f_mode & FMODE_WRITE) {
+				buf = buffer0;
+			}
 		}
-		if (filp->f_mode & FMODE_WRITE)	{
-			if (mutex_lock_interruptible(&dev->bufferOut->mutex)) {
-				mutex_unlock(&dev->mutex);
-				return -ERESTARTSYS;	
-			}
-			dev->bufferOut->nwriters--;
-			mutex_unlock(&dev->bufferOut->mutex);	
-		}	
+
+		// Acquire the locks and update the number of readers and writers
+		lock_check = acquire_locks(dev, buf);
+		if (lock_check != 0) {
+			return lock_check;
+		}
+		if (filp->f_mode & FMODE_READ) {
+			buf->nreaders--;
+		}
+		if (filp->f_mode & FMODE_WRITE) {
+			buf->nwriters--;
+		}
 		mutex_unlock(&dev->mutex);
+		mutex_unlock(&buf->mutex);
 			
 		return 0;
 	}
-
-
 
 
 
@@ -409,22 +406,29 @@
 		size_t count,   /* The max number of bytes to read  */
 		loff_t *f_pos )  /* The offset in the file           */
 	{
-		// This function isn't finished! The locks are all messed up, we need for both dev and bufIn.
-		
-		int lock_check;
-		struct dm510_device *dev = filp->private_data;
-		struct buffer *bufIn = dev->bufferIn;
 
-		if (mutex_lock_interruptible(&dev->mutex)){	// We also need to acquire the buffer's lock.
-			printk(KERN_INFO "DM510: read f \n");
-			return -ERESTARTSYS;
+		struct dm510_device *dev = filp->private_data;
+		struct buffer *bufIn;
+		struct inode *inode;
+		int minor, lock_check;
+
+		// Identify which buffer is being used and save a pointer to it
+		inode = file_inode(filp);
+		minor = iminor(inode);
+
+		if (minor == 0) {
+			bufIn = buffer0;
+		} else if (minor == 1) {
+			bufIn = buffer1;
 		}
 
-		lock_check = acquire_locks(dev, 0);
+		// Acquire the locks
+		lock_check = acquire_locks(dev, bufIn);
 		if (lock_check != 0) {
 			return lock_check;
 		}
 
+		// Wait for data if there is nothing to read
 		while (bufIn->rp == bufIn->wp) { /* nothing to read */
 			mutex_unlock(&dev->mutex); /* release the locks */
 			mutex_unlock(&bufIn->mutex);
@@ -438,15 +442,16 @@
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
 			}
 			/* otherwise loop, but first reacquire the locks */
-			lock_check = acquire_locks(dev, 0);
+			lock_check = acquire_locks(dev, bufIn);
 			if (lock_check != 0) {
 				return lock_check;
 			}
 		}
+
 		/* ok, data is there, return something */
 		if (bufIn->wp > bufIn->rp)
 			count = min(count, (size_t)(bufIn->wp - bufIn->rp));
-		else /* the write pointer has wrapped, return data up to dev->end */
+		else /* the write pointer has wrapped, return data up to bufIn->end */
 			count = min(count, (size_t)(bufIn->end - bufIn->rp));
 		if (copy_to_user(buf, bufIn->rp, count)) {
 			mutex_unlock (&dev->mutex);
@@ -454,9 +459,13 @@
 			printk(KERN_INFO "DM510: read f \n");
 			return -EFAULT;
 		}
-		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
+
+		// Update rp to show how much has been read
+		bufIn->rp += count;
 		if (bufIn->rp == bufIn->end){}
 			bufIn->rp = bufIn->start; /* wrapped */
+		
+		// Release the locks 
 		mutex_unlock (&dev->mutex);
 		mutex_unlock (&bufIn->mutex);
 
@@ -475,41 +484,59 @@
 
 	/* Called when a process writes to dev file */
 	static ssize_t dm510_write( struct file *filp,
-		const char *buffer,/* The buffer to get data from      */
+		const char *buf,/* The buffer to get data from      */
 		size_t count,   /* The max number of bytes to write */
 		loff_t *f_pos )  /* The offset in the file           */
 	{
 
-		/* write code belongs here */	
-
 		struct dm510_device *dev = filp->private_data; 
-		struct buffer *bufOut = dev->bufferOut
-		int result, lock_check;
+		struct buffer *bufOut;
+		struct inode *inode;
+		int minor, result, lock_check;
 
-		lock_check = acquire_locks(dev, 1);
+		// Identify which buffer is being used and save a pointer to it
+		inode = file_inode(filp);
+		minor = iminor(inode);
+
+		if (minor == 0) {
+			bufOut = buffer1;
+		} else if (minor == 1) {
+			bufOut = buffer0;
+		}
+
+		// Acquire the locks
+		lock_check = acquire_locks(dev, bufOut);
 		if (lock_check != 0) {
 			return lock_check;
 		}
+
 		/* Make sure there's space to write */
 		result = getwritespace(bufOut, filp);
 		if (result)				// ??
-			return result; /* scull_getwritespace called mutex_unlock(&dev->mutex) */
+			return result; /* getwritespace called mutex_unlock(&bufOut->mutex) */
 	
 		/* ok, space is there, accept something */
+		// Figure out how much
 		count = min(count, (size_t)spacefree(bufOut));
 		if (bufOut->wp >= bufOut->rp)
 			count = min(count, (size_t)(bufOut->end - bufOut->wp)); /* to end-of-buf */
 		else /* the write pointer has wrapped, fill up to rp-1 */
 			count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
 		//PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, buf);			do we need?
+
+		// Copy data into our buffer
 		if (copy_from_user(bufOut->wp, buffer, count)) {
 			mutex_unlock(&dev->mutex);
 			mutex_unlock(&bufOut->mutex);
 			return -EFAULT;
 		}
+
+		// Update wp to show that something was written
 		bufOut->wp += count;
 		if (bufOut->wp == bufOut->end)
 			bufOut->wp = bufOut->start; /* wrapped */
+
+		// Release the locks
 		mutex_unlock(&dev->mutex);
 		mutex_unlock(&bufOut->mutex);
 
@@ -565,13 +592,30 @@
 	// ================ DUMPSTER =================================
 	// code ideas:
 	// setup_dev and setup_buffer should maybe be void
-	// in init we need to make an inode, because iminor() only works on that type
-	// do we  need pdebug???, if we do we need to include i think
+
+	// do we need pdebug???, if we do we need to include i think
+	
+	// Can PDEBUG be replaced by printk?
+
+	// I am not 100% sure that double locking is done right. I did what made sense for me, but it
+	// feels like one of those things that could easily be wrong. 
+
+	// I have changed getwritespace so that it acquires and releases locks for dev and buf. I am confident 
+	// that it is supposed to be like that.
+
+	// Does getwritespace work? Is the filp supposed to represent the device and not the buffer? 
+
+	// What about the asynchronous readers? What are they? I will read more on them at some point.
+
+	// Several processes at a time must be able to open each device for reading, 
+	// only one process at a time should be able to open a device for writing.
+	// Does our program work this way? Do we need to check the intentions of a process before opening a device?
 
 
-	// I'm going to dump code here to edit as much as I want
 
-	// Functions that I am not sure we will need. 
+
+
+	// Functions that I am not sure we will need:
 
 	//static int scull_p_fasync(int fd, struct file *filp, int mode);
 
@@ -583,3 +627,5 @@
 
 
 	// ============ BRAINSTORM ========================
+
+
