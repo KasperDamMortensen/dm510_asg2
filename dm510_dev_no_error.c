@@ -123,6 +123,7 @@
 	static int getwritespace(struct buffer *buf, struct file *filp)
 	{
 		while (spacefree(buf) == 0) { /* full */
+			printk(KERN_NOTICE "getwritespace: space left %d, minor number:%d\n", spacefree(buf), iminor(filp->f_inode));
 			DEFINE_WAIT(wait);
 			
 			mutex_unlock(&buf->mutex);
@@ -277,9 +278,12 @@
 			if (i == 0) {
             	devices[i].bufferIn = buffer0;
             	devices[i].bufferOut = buffer1;
+				printk(KERN_INFO "DM510: device zero given buffer\n");
+
         	} else {
             	devices[i].bufferIn = buffer1;
             	devices[i].bufferOut = buffer0;
+				printk(KERN_INFO "DM510: device one given buffers\n");
         		}
 		}
 		
@@ -416,7 +420,7 @@
 			return -EFAULT;
 		}
 		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
-		if (bufIn->rp == bufIn->end){}
+		if (bufIn->rp == bufIn->end)
 			bufIn->rp = bufIn->start; /* wrapped */
 		mutex_unlock (&bufIn->mutex);
 
