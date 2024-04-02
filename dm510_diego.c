@@ -52,7 +52,6 @@
 			char *start, *end;                 /* begin of buf, end of buf */		// I renamed it to start.
 			int buffersize;                    /* used in pointer arithmetic */
 			char *rp, *wp;                     /* where to read, where to write */
-			int nreaders, nwriters;            /* number of openings for r/w */
 			// struct fasync_struct *async_queue; /* asynchronous readers */
 			struct mutex mutex;                /* mutual exclusion semaphore */
 	};
@@ -61,7 +60,8 @@
 	// This is a device which reads from one buffer and writes into another. 
 	// This is initialised in the open method.
 	struct dm510_device {
-		struct cdev cdev;               /* Char device structure */		// Would this mean that buffer doesn't get a cdev? Probably
+		struct cdev cdev;               /* Char device structure */		
+		int nreaders, nwriters;         /* number of openings for r/w */
 		struct mutex mutex;             /* mutual exclusion semaphore */		// I think this should be included.
 	};
 
@@ -302,43 +302,22 @@
 	static int dm510_open( struct inode *inode, struct file *filp ) {
 	
 		struct device *dev;	
-		struct buffer *buf;
-		int minor, lock_check;
 
 		// Identify which device is being opened and save a pointer to it
 		dev = container_of(inode->i_cdev, struct device, cdev);
 		filp->private_data = dev;
 
-		// Identify which buffer is being used and save a pointer to it
-		minor = iminor(inode);
-
-		if (minor == 0) {
-			if (filp->f_mode & FMODE_READ) {
-				buf = buffer0;
-			} else if (filp->f_mode & FMODE_WRITE) {
-				buf = buffer1;
-			}
-		} else if (minor == 1) {
-			if (filp->f_mode & FMODE_READ) {
-				buf = buffer1;
-			} else if (filp->f_mode & FMODE_WRITE) {
-				buf = buffer0;
-			}
-		}
-
-		// Acquire the locks and update the number of readers and writers
-		lock_check = acquire_locks(dev, buf);
-		if (lock_check != 0) {
-			return lock_check;
+		// Acquire the lock and update the number of readers and writers
+		if (mutex_lock_interruptible(&dev->mutex)) {
+			return -ERESTARTSYS;
 		}
 		if (filp->f_mode & FMODE_READ) {
-			buf->nreaders++;
+			dev->nreaders++;
 		}
 		if (filp->f_mode & FMODE_WRITE) {
-			buf->nwriters++;
+			dev->nwriters++;
 		}
 		mutex_unlock(&dev->mutex);
-		mutex_unlock(&buf->mutex);
 
 		// return nonseekable_open(inode, filp);		// Should this be used? 
 		return 0;
@@ -352,47 +331,24 @@
 	static int dm510_release( struct inode *inode, struct file *filp ) {
 	
 		struct device *dev = filp->private_data;
-		struct buffer *buf;
-		int minor, lock_check;
 	
 		/* remove this filp from the asynchronously notified filp's */
 		// scull_p_fasync(-1, filp, 0);		// What is this?
 
-		// MAYBE IMPORTANT NOTE:
+		// Acquire the lock and update the number of readers and writers
 		// The original function taken from pipe.c used mutex_lock instead of mutex_lock_interruptible.
-		// I don't know why. I changed it to be able to use acquire_locks.
-	
-		// Identify which buffer is being used and save a pointer to it
-		minor = iminor(inode);
-
-		if (minor == 0) {
-			if (filp->f_mode & FMODE_READ) {
-				buf = buffer0;
-			} else if (filp->f_mode & FMODE_WRITE) {
-				buf = buffer1;
-			}
-		} else if (minor == 1) {
-			if (filp->f_mode & FMODE_READ) {
-				buf = buffer1;
-			} else if (filp->f_mode & FMODE_WRITE) {
-				buf = buffer0;
-			}
-		}
-
-		// Acquire the locks and update the number of readers and writers
-		lock_check = acquire_locks(dev, buf);
-		if (lock_check != 0) {
-			return lock_check;
+		// It didn't have a check either. I don't know why, so I did it this way.
+		if (mutex_lock_interruptible(&dev->mutex)) {
+			return -ERESTARTSYS;
 		}
 		if (filp->f_mode & FMODE_READ) {
-			buf->nreaders--;
+			dev->nreaders--;
 		}
 		if (filp->f_mode & FMODE_WRITE) {
-			buf->nwriters--;
+			dev->nwriters--;
 		}
 		mutex_unlock(&dev->mutex);
-		mutex_unlock(&buf->mutex);
-			
+					
 		return 0;
 	}
 
