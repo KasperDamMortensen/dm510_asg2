@@ -123,7 +123,7 @@
 	static int getwritespace(struct buffer *buf, struct file *filp)
 	{
 		while (spacefree(buf) == 0) { /* full */
-			printk(KERN_NOTICE "getwritespace: space left %d, minor number:%d\n", spacefree(buf), iminor(filp->f_inode));
+			//printk(KERN_NOTICE "getwritespace: space left %d, minor number:%d\n", spacefree(buf), iminor(filp->f_inode));
 			DEFINE_WAIT(wait);
 			
 			mutex_unlock(&buf->mutex);
@@ -153,7 +153,7 @@
     	*buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);
     	if (!*buf) {
         	// Indicate error
-			printk(KERN_INFO "DM510: setup buffer: failed\n");
+			//printk(KERN_INFO "DM510: setup buffer: failed\n");
         	return -ENOMEM;
     	}
     	memset(*buf, 0, sizeof(struct buffer));
@@ -163,7 +163,7 @@
     	if (!(*buf)->start) {
         	kfree(*buf); // Free allocated structure before returning
         	*buf = NULL;
-			printk(KERN_INFO "DM510: setup buffer failed2 \n");
+			//printk(KERN_INFO "DM510: setup buffer failed2 \n");
         	return -ENOMEM;
     	}
 
@@ -176,7 +176,7 @@
     	(*buf)->buffersize = buffer_size;
     	(*buf)->end = (*buf)->start + (*buf)->buffersize;
     	(*buf)->rp = (*buf)->wp = (*buf)->start; /* rd and wr from the beginning */
-		printk(KERN_INFO "DM510: setupbuffer succes \n");
+		//printk(KERN_INFO "DM510: setupbuffer succes \n");
     	return 0; // Success
 	}
 
@@ -259,7 +259,7 @@
 			major_number = MAJOR(dev);
 		}
 		if (result < 0) {
-			printk(KERN_WARNING "DM510: can't get major %d\n", major_number);
+			//printk(KERN_WARNING "DM510: can't get major %d\n", major_number);
 			return result;
 		}
 
@@ -278,12 +278,12 @@
 			if (i == 0) {
             	devices[i].bufferIn = buffer0;
             	devices[i].bufferOut = buffer1;
-				printk(KERN_INFO "DM510: device zero given buffer\n");
+				//printk(KERN_INFO "DM510: device zero given buffer\n");
 
         	} else {
             	devices[i].bufferIn = buffer1;
             	devices[i].bufferOut = buffer0;
-				printk(KERN_INFO "DM510: device one given buffers\n");
+				//printk(KERN_INFO "DM510: device one given buffers\n");
         		}
 		}
 		
@@ -309,9 +309,9 @@
 	static int dm510_open( struct inode *inode, struct file *filp ) {
 		
 		struct dm510_device *dev;	
-		int minor_number = iminor(inode);
+		//int minor_number = iminor(inode);
 		
-    	printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
+    	//printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
 
 		// Identify which device is being opened and save a pointer to it for future use
 
@@ -384,27 +384,27 @@
 		
 		struct dm510_device *dev = filp->private_data;
 		struct buffer *bufIn = dev->bufferIn;
-		int minor_number = iminor(filp->f_inode);
-   		printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
+		//int minor_number = iminor(filp->f_inode);
+   		//printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufIn->mutex)){	// We also need to acquire the buffer's lock.
-			printk(KERN_INFO "DM510: read f1 \n");
+			//printk(KERN_INFO "DM510: read f1 \n");
 			return -ERESTARTSYS;
 		}
 		while (bufIn->rp == bufIn->wp) { /* nothing to read */
 			mutex_unlock(&bufIn->mutex); /* release the lock */
 			if (filp->f_flags & O_NONBLOCK){
-				printk(KERN_INFO "DM510: read f2 \n");
+				//printk(KERN_INFO "DM510: read f2 \n");
 				return -EAGAIN;
 			}
-			PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						//do we need?
+			//PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						//do we need?
 			if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp))){
-				printk(KERN_INFO "DM510: read f3 \n");
+				//printk(KERN_INFO "DM510: read f3 \n");
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
 			}
 			/* otherwise loop, but first reacquire the lock */
 			if (mutex_lock_interruptible(&bufIn->mutex)){
-				printk(KERN_INFO "DM510: read f4 \n");
+				//printk(KERN_INFO "DM510: read f4 \n");
 				return -ERESTARTSYS;
 			}
 		}
@@ -416,7 +416,7 @@
 			count = min(count, (size_t)(bufIn->end - bufIn->rp));
 		if (copy_to_user(buf, bufIn->rp, count)) {
 			mutex_unlock (&bufIn->mutex);
-			printk(KERN_INFO "DM510: read f \n");
+			//printk(KERN_INFO "DM510: read f \n");
 			return -EFAULT;
 		}
 		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
@@ -426,7 +426,7 @@
 
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
-		PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
+		//PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
 		//printk(KERN_INFO "DM510: read s \n");
 		return count;	
 	}
@@ -448,8 +448,8 @@
 
 		struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
 		int result;
-		int minor_number = iminor(filp->f_inode);
-    	printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
+		//int minor_number = iminor(filp->f_inode);
+    	//printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufOut->mutex))
 			return -ERESTARTSYS;
@@ -465,7 +465,7 @@
 			count = min(count, (size_t)(bufOut->end - bufOut->wp)); /* to end-of-buf */
 		else /* the write pointer has wrapped, fill up to rp-1 */
 			count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
-		PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, bufOut);			//do we need?
+		//PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, bufOut);			//do we need?
 		if (copy_from_user(bufOut->wp, buffer, count)) {
 			mutex_unlock (&bufOut->mutex);
 			return -EFAULT;
@@ -481,7 +481,7 @@
 		/* and signal asynchronous readers, explained late in chapter 5 */
 		//if (bufOut->async_queue)																do we need this? causes error
 			//kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN); 									
-		PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					//do we need?
+		//PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					//do we need?
 		//printk(KERN_INFO "DM510: write \n");
 		return count;
 	}
@@ -497,7 +497,7 @@
 		unsigned long arg ) /* argument of the command */
 	{
 		/* ioctl code belongs here */
-		printk(KERN_INFO "DM510: ioctl called.\n");
+		//printk(KERN_INFO "DM510: ioctl called.\n");
 
 		return 0; //has to be changed
 	}
