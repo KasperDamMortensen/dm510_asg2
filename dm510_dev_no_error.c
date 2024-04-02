@@ -112,7 +112,7 @@
 
 	/* How much space is free? */
 	static int spacefree(struct buffer *buf) {
-		printk(KERN_INFO "DM510: sapcefree \n");
+		//printk(KERN_INFO "DM510: sapcefree \n");
 		if (buf->rp == buf->wp)
 			return buf->buffersize - 1;
 		return ((buf->rp + buf->buffersize - buf->wp) % buf->buffersize) - 1;
@@ -129,7 +129,7 @@
 			mutex_unlock(&buf->mutex);
 			if (filp->f_flags & O_NONBLOCK)
 				return -EAGAIN;
-			PDEBUG("\"%s\" writing: going to sleep\n",current->comm);  					//do we need?
+			PDEBUG("\"%s\" writing: going to sleep:%d\n",current->comm,iminor(filp->f_inode));  					//do we need?
 			prepare_to_wait(&buf->outq, &wait, TASK_INTERRUPTIBLE);
 			if (spacefree(buf) == 0)
 				schedule();
@@ -139,7 +139,7 @@
 			if (mutex_lock_interruptible(&buf->mutex))
 				return -ERESTARTSYS;
 		}
-		printk(KERN_INFO "DM510: getwritespace \n");
+		//printk(KERN_INFO "DM510: getwritespace \n");
 		return 0;
 	}	
 
@@ -290,7 +290,7 @@
 		struct dm510_device *dev;	
 		int minor_number = iminor(inode);
 		
-    	printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
+    	//printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
 
 		// Identify which device is being opened and save a pointer to it for future use
 
@@ -329,7 +329,7 @@
 		mutex_unlock(&dev->mutex);
 
 		// return nonseekable_open(inode, filp);		// Should this be used? 
-		printk(KERN_INFO "DM510: open \n");
+		//printk(KERN_INFO "DM510: open \n");
 		return 0;
 	}
 
@@ -376,7 +376,7 @@
 		struct dm510_device *dev = filp->private_data;
 		struct buffer *bufIn = dev->bufferIn;
 		int minor_number = iminor(filp->f_inode);
-   		printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
+   		//printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufIn->mutex)){	// We also need to acquire the buffer's lock.
 			printk(KERN_INFO "DM510: read f1 \n");
@@ -418,7 +418,7 @@
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
 		PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
-		printk(KERN_INFO "DM510: read s \n");
+		//printk(KERN_INFO "DM510: read s \n");
 		return count;	
 	}
 
@@ -440,7 +440,7 @@
 		struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
 		int result;
 		int minor_number = iminor(filp->f_inode);
-    	printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
+    	//printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufOut->mutex))
 			return -ERESTARTSYS;
@@ -473,7 +473,7 @@
 		//if (bufOut->async_queue)																do we need this? causes error
 			//kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN); 									
 		PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					//do we need?
-		printk(KERN_INFO "DM510: write \n");
+		//printk(KERN_INFO "DM510: write \n");
 		return count;
 	}
 
