@@ -95,8 +95,8 @@
 	static struct dm510_device *devices;
 
 	// These are our two buffers.
-	static struct buffer *buffer0;
-	static struct buffer *buffer1;
+	static struct buffer *buffer0 = NULL;
+	static struct buffer *buffer1 = NULL;
 
 
 	/* file operations struct */
@@ -231,18 +231,9 @@
 		int result, i;
 		dev_t dev = 0;
 
-		// First initialise both buffers.
-		struct buffer *buffer0; // Declare a pointer to struct buffer
-		struct buffer *buffer1; // Declare a pointer to struct buffer
-		// Call setup_buffer function
-		int result0 = setup_buffer(&buffer0, buffer_size);
-		int result1 = setup_buffer(&buffer1, buffer_size);
-		// Check if setup_buffer succeeded
-		if (result0  != 0 || result1 != 0) {
-    		printk(KERN_ERR "Failed to setup buffer: error code %d\n", result);
-		}
 
-
+		
+	
 		// This part of the code makes the device. (No!)
 		// This part makes a dev_t, which is a number containing both a major and a minor number. 
 		// And it then registers them as belonging to a device. If the chosen major is available, it is used.
@@ -273,13 +264,6 @@
 		}
 		memset(devices, 0, nr_devs * sizeof(struct dm510_device));
 		for (i = 0; i < nr_devs; i++) {
-			//if (iminor(devices[i]) == 0) {
-				devices[i].bufferIn = buffer0;
-				devices[i].bufferOut = buffer1;
-			//} else {		// (iminor(devices[i]) == 1)
-				devices[i].bufferIn = buffer1;
-				devices[i].bufferOut = buffer0;
-			//	}
 			mutex_init(&devices[i].mutex);
 			setup_cdev(devices + i, i);		
 		}
@@ -305,11 +289,33 @@
 		
 		struct dm510_device *dev;	
 		int minor_number = iminor(inode);
+		
     	printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
 
 		// Identify which device is being opened and save a pointer to it for future use
+
+		// First initialise both buffers.
+
+		// Call setup_buffer function
+		if (buffer0 == NULL || buffer1 ==NULL){
+			int result0 = setup_buffer(&buffer0, buffer_size);
+			int result1 = setup_buffer(&buffer1, buffer_size);
+			// Check if setup_buffer succeeded
+			if (result0  != 0 || result1 != 0) {
+    			return -1;
+			}
+		}
 		dev = container_of(inode->i_cdev, struct dm510_device, cdev);
 		filp->private_data = dev;
+
+		if ( minor_number == 0) {
+				dev->bufferIn = buffer0;
+				dev->bufferOut = buffer1;
+				printk(KERN_INFO "DM510: initalized buffers for dev:  %d\n", minor_number);
+			} else {		// (iminor(devices[i]) == 1)
+				dev->bufferIn = buffer1;
+				dev->bufferOut = buffer0;
+		}
 
 		if (mutex_lock_interruptible(&dev->mutex))
 			return -ERESTARTSYS;
@@ -372,12 +378,12 @@
 		int minor_number = iminor(filp->f_inode);
    		printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
 
-		if (mutex_lock_interruptible(&dev->mutex)){	// We also need to acquire the buffer's lock.
+		if (mutex_lock_interruptible(&bufIn->mutex)){	// We also need to acquire the buffer's lock.
 			printk(KERN_INFO "DM510: read f1 \n");
 			return -ERESTARTSYS;
 		}
 		while (bufIn->rp == bufIn->wp) { /* nothing to read */
-			mutex_unlock(&dev->mutex); /* release the lock */
+			mutex_unlock(&bufIn->mutex); /* release the lock */
 			if (filp->f_flags & O_NONBLOCK){
 				printk(KERN_INFO "DM510: read f2 \n");
 				return -EAGAIN;
@@ -388,25 +394,26 @@
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
 			}
 			/* otherwise loop, but first reacquire the lock */
-			if (mutex_lock_interruptible(&dev->mutex)){
+			if (mutex_lock_interruptible(&bufIn->mutex)){
 				printk(KERN_INFO "DM510: read f4 \n");
 				return -ERESTARTSYS;
 			}
 		}
+		
 		/* ok, data is there, return something */
 		if (bufIn->wp > bufIn->rp)
 			count = min(count, (size_t)(bufIn->wp - bufIn->rp));
 		else /* the write pointer has wrapped, return data up to dev->end */
 			count = min(count, (size_t)(bufIn->end - bufIn->rp));
 		if (copy_to_user(buf, bufIn->rp, count)) {
-			mutex_unlock (&dev->mutex);
+			mutex_unlock (&bufIn->mutex);
 			printk(KERN_INFO "DM510: read f \n");
 			return -EFAULT;
 		}
 		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
 		if (bufIn->rp == bufIn->end){}
 			bufIn->rp = bufIn->start; /* wrapped */
-		mutex_unlock (&dev->mutex);
+		mutex_unlock (&bufIn->mutex);
 
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
@@ -433,7 +440,7 @@
 		struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
 		int result;
 		int minor_number = iminor(filp->f_inode);
-    	printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
+    	printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufOut->mutex))
 			return -ERESTARTSYS;
