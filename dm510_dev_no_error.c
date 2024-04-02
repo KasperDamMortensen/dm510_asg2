@@ -82,7 +82,6 @@
 	int nr_devs = DEVICE_COUNT;				// number of devices (prev scull_p_nr_devs) 		// static? I saw this somewhere...
 	int buffer_size =  BUFFER_SIZE;			// Explains itself (prev scull_p_buffer) 
 	dev_t first_devno;						// Our first device number (prev scull_p_devno)
-
 	// I suppose that module_param allows you to modify some structure safely and easily...
 	module_param(major_number, int, S_IRUGO);
 	module_param(minor_number, int, S_IRUGO);
@@ -231,7 +230,15 @@
 		int result, i;
 		dev_t dev = 0;
 
-
+		// Call setup_buffer function
+		if (buffer0 == NULL || buffer1 ==NULL){
+			int result0 = setup_buffer(&buffer0, buffer_size);
+			int result1 = setup_buffer(&buffer1, buffer_size);
+			// Check if setup_buffer succeeded
+			if (result0  != 0 || result1 != 0) {
+    			return -1;
+			}
+		}
 		
 	
 		// This part of the code makes the device. (No!)
@@ -266,7 +273,17 @@
 		for (i = 0; i < nr_devs; i++) {
 			mutex_init(&devices[i].mutex);
 			setup_cdev(devices + i, i);		
+
+			if (i == 0) {
+            	devices[i].bufferIn = buffer0;
+            	devices[i].bufferOut = buffer1;
+        	} else {
+            	devices[i].bufferIn = buffer1;
+            	devices[i].bufferOut = buffer0;
+        		}
 		}
+		
+		
 
 		printk(KERN_INFO "DM510: Hello from your device!\n");
 		return 0;
@@ -290,32 +307,16 @@
 		struct dm510_device *dev;	
 		int minor_number = iminor(inode);
 		
-    	//printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
+    	printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
 
 		// Identify which device is being opened and save a pointer to it for future use
 
 		// First initialise both buffers.
 
-		// Call setup_buffer function
-		if (buffer0 == NULL || buffer1 ==NULL){
-			int result0 = setup_buffer(&buffer0, buffer_size);
-			int result1 = setup_buffer(&buffer1, buffer_size);
-			// Check if setup_buffer succeeded
-			if (result0  != 0 || result1 != 0) {
-    			return -1;
-			}
-		}
+		
 		dev = container_of(inode->i_cdev, struct dm510_device, cdev);
 		filp->private_data = dev;
 
-		if ( minor_number == 0) {
-				dev->bufferIn = buffer0;
-				dev->bufferOut = buffer1;
-				printk(KERN_INFO "DM510: initalized buffers for dev:  %d\n", minor_number);
-			} else {		// (iminor(devices[i]) == 1)
-				dev->bufferIn = buffer1;
-				dev->bufferOut = buffer0;
-		}
 
 		if (mutex_lock_interruptible(&dev->mutex))
 			return -ERESTARTSYS;
@@ -355,6 +356,10 @@
 		if (filp->f_mode & FMODE_WRITE)		// Not an else if?
 			dev->bufferOut->nwriters--;
 		mutex_unlock(&dev->mutex);
+		//if (dev->bufferIn->nreaders + dev->bufferInnwriters == 0) { //skal ændres så den fjerner og checker device i stedet for buffer
+			//kfree(dev->buffer);
+			//dev->buffer = NULL; /* the other fields are not checked on open */
+		//}
 		printk(KERN_INFO "DM510: release \n");
 		return 0;
 	}
@@ -376,7 +381,7 @@
 		struct dm510_device *dev = filp->private_data;
 		struct buffer *bufIn = dev->bufferIn;
 		int minor_number = iminor(filp->f_inode);
-   		//printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
+   		printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufIn->mutex)){	// We also need to acquire the buffer's lock.
 			printk(KERN_INFO "DM510: read f1 \n");
@@ -440,7 +445,7 @@
 		struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
 		int result;
 		int minor_number = iminor(filp->f_inode);
-    	//printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
+    	printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufOut->mutex))
 			return -ERESTARTSYS;
