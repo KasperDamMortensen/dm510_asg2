@@ -45,8 +45,26 @@
 
 	#define DEVICE_COUNT 2
 	#define BUFFER_SIZE 10	// This number should probably be changed later
+	#define MAX_READERS 10
+
+    /*
+    * Ioctl definitions
+    */
+
+    /* Use 'Z' as magic number */
+    #define DM510_IOC_MAGIC 'Z'
+    #define DM510_IOC_MAXNR 14
+
+
+    #define DM510_IOC_ADJUST_BUFFERSIZE  _IOW(DM510_IOC_MAGIC, 1, unsigned long)
+    #define DM510_IOC_ADJUST_NREADERS    _IOW(DM510_IOC_MAGIC, 2, unsigned long)
+
+
 
 	/* end of what really should have been in a .h file */
+
+
+
 
 
 
@@ -56,7 +74,7 @@
 			char *start, *end;                 /* begin of buf, end of buf */		// I renamed it to start.
 			int buffersize;                    /* used in pointer arithmetic */
 			char *rp, *wp;                     /* where to read, where to write */
-			int nreaders, nwriters;            /* number of openings for r/w */
+			
 			// struct fasync_struct *async_queue; /* asynchronous readers */
 			struct mutex mutex;                /* mutual exclusion semaphore */
 	};
@@ -65,9 +83,10 @@
 	// This is a device which reads from one buffer and writes into another. 
 	// This is initialised in the open method.
 	struct dm510_device {
-		struct buffer *bufferIn;			// The buffer it reads from.
+		struct buffer *bufferIn;		// The buffer it reads from.
 		struct buffer *bufferOut;		// The buffer it writes to.
 		struct cdev cdev;               /* Char device structure */		// Would this mean that buffer doesn't get a cdev? Probably
+		int nreaders, nwriters;            /* number of openings for r/w */
 		struct mutex mutex;             /* mutual exclusion semaphore */		// I think this should be included.
 	};
 
@@ -123,7 +142,6 @@
 	static int getwritespace(struct buffer *buf, struct file *filp)
 	{
 		while (spacefree(buf) == 0) { /* full */
-			//printk(KERN_NOTICE "getwritespace: space left %d, minor number:%d\n", spacefree(buf), iminor(filp->f_inode));
 			DEFINE_WAIT(wait);
 			
 			mutex_unlock(&buf->mutex);
@@ -153,7 +171,7 @@
     	*buf = kmalloc(sizeof(struct buffer), GFP_KERNEL);
     	if (!*buf) {
         	// Indicate error
-			//printk(KERN_INFO "DM510: setup buffer: failed\n");
+			printk(KERN_INFO "DM510: setup buffer: failed\n");
         	return -ENOMEM;
     	}
     	memset(*buf, 0, sizeof(struct buffer));
@@ -163,7 +181,7 @@
     	if (!(*buf)->start) {
         	kfree(*buf); // Free allocated structure before returning
         	*buf = NULL;
-			//printk(KERN_INFO "DM510: setup buffer failed2 \n");
+			printk(KERN_INFO "DM510: setup buffer failed2 \n");
         	return -ENOMEM;
     	}
 
@@ -176,7 +194,7 @@
     	(*buf)->buffersize = buffer_size;
     	(*buf)->end = (*buf)->start + (*buf)->buffersize;
     	(*buf)->rp = (*buf)->wp = (*buf)->start; /* rd and wr from the beginning */
-		//printk(KERN_INFO "DM510: setupbuffer succes \n");
+		printk(KERN_INFO "DM510: setupbuffer succes \n");
     	return 0; // Success
 	}
 
@@ -259,7 +277,7 @@
 			major_number = MAJOR(dev);
 		}
 		if (result < 0) {
-			//printk(KERN_WARNING "DM510: can't get major %d\n", major_number);
+			printk(KERN_WARNING "DM510: can't get major %d\n", major_number);
 			return result;
 		}
 
@@ -278,12 +296,9 @@
 			if (i == 0) {
             	devices[i].bufferIn = buffer0;
             	devices[i].bufferOut = buffer1;
-				//printk(KERN_INFO "DM510: device zero given buffer\n");
-
         	} else {
             	devices[i].bufferIn = buffer1;
             	devices[i].bufferOut = buffer0;
-				//printk(KERN_INFO "DM510: device one given buffers\n");
         		}
 		}
 		
@@ -309,9 +324,9 @@
 	static int dm510_open( struct inode *inode, struct file *filp ) {
 		
 		struct dm510_device *dev;	
-		//int minor_number = iminor(inode);
+		int minor_number = iminor(inode);
 		
-    	//printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
+    	printk(KERN_INFO "DM510: Device opened with minor number %d\n", minor_number);
 
 		// Identify which device is being opened and save a pointer to it for future use
 
@@ -328,9 +343,9 @@
 		// Update the number of readers and writers 
 		/* use f_mode, not  f_flags: it's cleaner (fs/open.c tells why) */
 		if (filp->f_mode & FMODE_READ)
-			dev->bufferIn->nreaders++;		// Here it gets interesting...
+			dev->nreaders++;		// Here it gets interesting...
 		if (filp->f_mode & FMODE_WRITE)		// Does it need the buffer's lock 
-			dev->bufferOut->nwriters++;		// to check these values?
+			dev->nwriters++;		// to check these values?
 		mutex_unlock(&dev->mutex);
 
 		// return nonseekable_open(inode, filp);		// Should this be used? 
@@ -356,9 +371,9 @@
 
 		mutex_lock(&dev->mutex);			// Not interruptible? No if statement or -ERESTARTSYS either...
 		if (filp->f_mode & FMODE_READ)
-			dev->bufferIn->nreaders--;
+			dev->nreaders--;
 		if (filp->f_mode & FMODE_WRITE)		// Not an else if?
-			dev->bufferOut->nwriters--;
+			dev->nwriters--;
 		mutex_unlock(&dev->mutex);
 		//if (dev->bufferIn->nreaders + dev->bufferInnwriters == 0) { //skal ændres så den fjerner og checker device i stedet for buffer
 			//kfree(dev->buffer);
@@ -384,27 +399,27 @@
 		
 		struct dm510_device *dev = filp->private_data;
 		struct buffer *bufIn = dev->bufferIn;
-		//int minor_number = iminor(filp->f_inode);
-   		//printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
+		int minor_number = iminor(filp->f_inode);
+   		printk(KERN_INFO "DM510: Device read from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufIn->mutex)){	// We also need to acquire the buffer's lock.
-			//printk(KERN_INFO "DM510: read f1 \n");
+			printk(KERN_INFO "DM510: read f1 \n");
 			return -ERESTARTSYS;
 		}
 		while (bufIn->rp == bufIn->wp) { /* nothing to read */
 			mutex_unlock(&bufIn->mutex); /* release the lock */
 			if (filp->f_flags & O_NONBLOCK){
-				//printk(KERN_INFO "DM510: read f2 \n");
+				printk(KERN_INFO "DM510: read f2 \n");
 				return -EAGAIN;
 			}
-			//PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						//do we need?
+			PDEBUG("\"%s\" reading: going to sleep\n", current->comm);						//do we need?
 			if (wait_event_interruptible(bufIn->inq, (bufIn->rp != bufIn->wp))){
-				//printk(KERN_INFO "DM510: read f3 \n");
+				printk(KERN_INFO "DM510: read f3 \n");
 				return -ERESTARTSYS; /* signal: tell the fs layer to handle it */
 			}
 			/* otherwise loop, but first reacquire the lock */
 			if (mutex_lock_interruptible(&bufIn->mutex)){
-				//printk(KERN_INFO "DM510: read f4 \n");
+				printk(KERN_INFO "DM510: read f4 \n");
 				return -ERESTARTSYS;
 			}
 		}
@@ -416,17 +431,17 @@
 			count = min(count, (size_t)(bufIn->end - bufIn->rp));
 		if (copy_to_user(buf, bufIn->rp, count)) {
 			mutex_unlock (&bufIn->mutex);
-			//printk(KERN_INFO "DM510: read f \n");
+			printk(KERN_INFO "DM510: read f \n");
 			return -EFAULT;
 		}
 		dev->bufferIn->rp += count;// valgte buffer tilfældigt for at fjerne en fejl, ved ikke om det skal være In eller Out.
-		if (bufIn->rp == bufIn->end)
+		if (bufIn->rp == bufIn->end){}
 			bufIn->rp = bufIn->start; /* wrapped */
 		mutex_unlock (&bufIn->mutex);
 
 		/* finally, awake any writers and return */
 		wake_up_interruptible(&bufIn->outq);
-		//PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
+		PDEBUG("\"%s\" did read %li bytes\n",current->comm, (long)count);
 		//printk(KERN_INFO "DM510: read s \n");
 		return count;	
 	}
@@ -448,8 +463,8 @@
 
 		struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
 		int result;
-		//int minor_number = iminor(filp->f_inode);
-    	//printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
+		int minor_number = iminor(filp->f_inode);
+    	printk(KERN_INFO "DM510: Device write from with minor number %d\n", minor_number);
 
 		if (mutex_lock_interruptible(&bufOut->mutex))
 			return -ERESTARTSYS;
@@ -465,7 +480,7 @@
 			count = min(count, (size_t)(bufOut->end - bufOut->wp)); /* to end-of-buf */
 		else /* the write pointer has wrapped, fill up to rp-1 */
 			count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
-		//PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, bufOut);			//do we need?
+		PDEBUG("Going to accept %li bytes to %p from %p\n", (long)count, bufOut->wp, bufOut);			//do we need?
 		if (copy_from_user(bufOut->wp, buffer, count)) {
 			mutex_unlock (&bufOut->mutex);
 			return -EFAULT;
@@ -481,7 +496,7 @@
 		/* and signal asynchronous readers, explained late in chapter 5 */
 		//if (bufOut->async_queue)																do we need this? causes error
 			//kill_fasync(&bufOut->async_queue, SIGIO, POLL_IN); 									
-		//PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					//do we need?
+		PDEBUG("\"%s\" did write %li bytes\n",current->comm, (long)count);					//do we need?
 		//printk(KERN_INFO "DM510: write \n");
 		return count;
 	}
@@ -496,10 +511,97 @@
 		unsigned int cmd,   /* command passed from the user */
 		unsigned long arg ) /* argument of the command */
 	{
-		/* ioctl code belongs here */
-		//printk(KERN_INFO "DM510: ioctl called.\n");
 
-		return 0; //has to be changed
+        struct dm510_device *dev = filp->private_data;
+		struct buffer *bufIn = dev->bufferIn;
+        int retval = 0, err = 0;
+        int data;
+        char *new_start;
+
+		/* ioctl code belongs here */
+		printk(KERN_INFO "DM510: ioctl called.\n");
+
+        /*
+    	 * extract the type and number bitfields, and don't decode
+	     * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
+    	 */
+	    if (_IOC_TYPE(cmd) != DM510_IOC_MAGIC) return -ENOTTY;
+	    if (_IOC_NR(cmd) > DM510_IOC_MAXNR) return -ENOTTY;
+
+        /*
+        * the direction is a bitmask, and VERIFY_WRITE catches R/W
+        * transfers. `Type' is user-oriented, while
+        * access_ok is kernel-oriented, so the concept of "read" and
+        * "write" is reversed
+        */
+        if (_IOC_DIR(cmd) & _IOC_READ)
+            err = !access_ok((void __user *)arg, _IOC_SIZE(cmd));
+        else if (_IOC_DIR(cmd) & _IOC_WRITE)
+            err =  !access_ok((void __user *)arg, _IOC_SIZE(cmd));
+        if (err) return -EFAULT;
+
+        switch(cmd) {
+
+            // Adjust the size of the bufIn of the device given
+            // Must be at least large enough for the data still to be read
+            case DM510_IOC_ADJUST_BUFFERSIZE:
+
+                // Check how much data is written inside the current buffer.
+                if (bufIn->rp == bufIn->wp) {
+                    data = 0;
+                } else if (bufIn->rp < bufIn->wp) {
+                    data = (bufIn->wp - bufIn->rp);
+                } else {     // rp > wp
+                    data = ((bufIn->end - bufIn->rp) + (bufIn->wp - bufIn->start));
+                }
+
+                // Check that the buffer size isn't smaller than the data inside.
+                if (data > arg) {
+                    return -EINVAL;
+                }
+
+                // Allocate memory with the desired size.
+                new_start = kmalloc(arg, GFP_KERNEL);
+                if (!new_start) {
+                    return -ENOMEM;
+                }
+
+                // Copy the data into the new buffer.
+                if (data != 0) {
+                    if (bufIn->rp < bufIn->wp) {
+                        memcpy(new_start, bufIn->rp, data);
+                    } else {        // (rp > wp)
+                        memcpy(new_start, bufIn->rp, (bufIn->end - bufIn->rp));
+                        memcpy((new_start + (bufIn->end - bufIn->rp)), bufIn->start, (bufIn->wp - bufIn->start));
+                    }
+                }
+
+                // Adjust all the pointers
+                bufIn->start = new_start;
+                bufIn->buffersize = arg;
+                bufIn->rp = bufIn->start;
+                if (bufIn->rp < bufIn->wp) {
+                    bufIn->wp = bufIn->start + data;
+                } else {
+                    bufIn->wp = bufIn->start+((bufIn->end - bufIn->rp) + (bufIn->wp - bufIn->start));
+                }
+
+                return 0;
+                 
+
+
+
+                
+                
+            case DM510_IOC_ADJUST_NREADERS: 
+
+                
+
+            default:  /* redundant, as cmd was checked against MAXNR */
+		    return -ENOTTY;
+        }
+
+		return retval; //has to be changed
 	}
 
 
@@ -540,7 +642,25 @@
 
 
 
+    // Simple alternative to reader/writer semaphore:
+    // nreaders and nwriters remain in the buffer and are checked in the open method. 
+    // If the number is maximum for each, you return -EBUSY.
 
+
+
+
+    /* 
+    reallocate_buffer:
+    Check that the buffer size isn't smaller than the data inside.
+    Allocate memory with the desired size.
+    Check that the memory allocation was successful.
+
+    Copy from rp to end to the new buffer.
+    Copy from start to rp to the new buffer.
+    Set rp to the start of the new buffer.
+
+    Set wp at the end of the data you have copied.
+    */
 
 
 
