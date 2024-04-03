@@ -310,13 +310,6 @@
 
 
 
-	
-
-
-
-
-
-
 
 	/* Called when a process tries to open the device file */
 	static int dm510_open( struct inode *inode, struct file *filp ) {
@@ -350,9 +343,6 @@
 		//printk(KERN_INFO "DM510: open \n");
 		return 0;
 	}
-
-
-
 
 
 
@@ -582,7 +572,7 @@
                 if (bufIn->rp < bufIn->wp) {
                     bufIn->wp = bufIn->start + data;
                 } else {
-                    bufIn->wp = (bufIn->end - bufIn->rp) + (bufIn->wp - bufIn->start);
+					bufIn->wp = bufIn->start+((bufIn->end - bufIn->rp) + (bufIn->wp - bufIn->start));
                 }
 
                 return 0;
@@ -631,14 +621,6 @@
 	//setup_dev and setup_buffer should maybe be void
 	//in init we need to make an inode, because iminor() only works on that type
 	// do we  need pdebug???, if we do we need to include i think
-
-
-	// I'm going to dump code here to edit as much as I want
-
-	// Functions that I am not sure we will need. 
-
-	//static int scull_p_fasync(int fd, struct file *filp, int mode);
-	//static int spacefree(struct scull_pipe *dev);
 
 
 
