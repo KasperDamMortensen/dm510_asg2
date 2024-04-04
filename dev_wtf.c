@@ -15,16 +15,6 @@
 #include <linux/cdev.h>
 #include <linux/ioctl.h>
 
-#define DEVICE_NAME "dm510_dev" /* Dev name as it appears in /proc/devices */
-#define MAJOR_NUMBER 255
-#define MIN_MINOR_NUMBER 0
-#define MAX_MINOR_NUMBER 1
-
-#define DEVICE_COUNT 2
-#define BUFFER_SIZE 10	// This number should probably be changed later
-#define MAX_READERS 10  // This number should probably be changed later
-
-
 #include "dm510.h"
 
 // This is a buffer which is accessed by one device for reading and another for writing.
