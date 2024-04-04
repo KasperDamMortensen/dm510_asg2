@@ -33,7 +33,7 @@ int main(int argc, char *argv[])
         perror("open1:");
         fd2 = open("/dev/dm510-0", O_RDONLY);
         perror("open2:");
-        if (ioctl(fd, DM510_IOC_ADJUST_NREADERS, i) == -1) {
+        if (ioctl(fd, DM510_IOC_ADJUST_NREADERS, i) < 0) {
             perror("ioctl failed");
             return 1;
         }
