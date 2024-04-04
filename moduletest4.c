@@ -1,92 +1,42 @@
-/* Test program for 2nd mandatory assignment.
- IKKE FÆRDIG !!!!!!!!!!!!!!!!!!
- */
-
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/ioctl.h>
 
-#define ITS 10000
+#define DM510_IOC_MAGIC 'Z'
+#define DM510_IOC_MAXNR 2
+#define DM510_IOC_ADJUST_BUFFERSIZE  _IOW(DM510_IOC_MAGIC, 1, unsigned long)
+#define DM510_IOC_ADJUST_NREADERS    _IOW(DM510_IOC_MAGIC, 2, unsigned long)
 
-void read_all(int fd, void *buf, int count) {
-    while (count > 0) {
-        int ret;
-        ret = read(fd, buf, count);
-        if (ret == -1) {
-            perror("read");
-            exit(1);
-        }
-
-        count -= ret;
-        buf += ret;
-    }
-}
-
-void write_all(int fd, void *buf, int count) {
-    while (count > 0) {
-        int ret;
-        ret = write(fd, buf, count);
-        if (ret == -1) {
-            perror("write");
-            exit(1);
-        }
-
-        count -= ret;
-        buf += ret;
-    }
-}
 
 int main(int argc, char *argv[])
 {
     pid_t pid;
-    int fd;
-    int sum = 0, i;
-    int val;
-    int cnt;
+    int fd,fd2;
+    int val=0;
+    int res;
 
-    pid = fork();
-
-    if (pid == 0) {
-        fd = open("/dev/dm510-0", O_RDWR);
-	perror("w open");	
-        for (i=0; i<ITS; i++) {
-            val++;
-            sum += val;
-            cnt = 4;
-            write_all(fd, &val, 4);
-        }
-        printf("1. expected result: %d\n", sum);
-
-        sum = 0;
-
-        for (i=0; i<ITS; i++) {
-            read_all(fd, &val, 4);
-            sum += val;
-        }
-        printf("2. result: %d\n", sum);
-    } else {
-        fd = open("/dev/dm510-1", O_RDWR);
-        perror("r open");
-
-        for (i=0; i<ITS; i++) {
-            read_all(fd, &val, 4);
-            sum += val;
-        }
-        printf("1. result: %d\n", sum);
-
-        sum = 0;
-
-        for (i=0; i<ITS; i++) {
-            val++;
-            sum += val;
-            write_all(fd, &val, 4);
-        }
-        printf("2. expected result: %d\n", sum);
-        wait(NULL);
+    fd = open("/dev/dm510-0", O_RDWR);
+    fd2 = open("/dev/dm510-1", O_RDWR);
+    perror("WR open");
+    ioctl(fd2, DM510_IOC_ADJUST_BUFFERSIZE, 2);
+    res = write(fd,&val,2);
+    if (res <= 0){
+        printf("buffer full\n");
+    }
+    res = write(fd,&val,2);
+    if (res <= 0){
+        printf("buffer full\n");
+    }
+    ioctl(fd, DM510_IOC_ADJUST_BUFFERSIZE, 4);
+    res = write(fd,&val,2);
+    if (res >= 0){
+        printf("added value: %d after increasing buffersize\n",val);
     }
 
+    close(fd);
     return 0;
 }
