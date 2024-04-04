@@ -408,9 +408,10 @@ static ssize_t dm510_write( struct file *filp,
 
     /* Make sure there's space to write */
     result = getwritespace(bufOut, filp);
-    if (result)				
+    if (result <=0)	{	
+		mutex_unlock(&bufOut->mutex);		
         return result; /* getwritespace called mutex_unlock(&bufOut->mutex) */
-
+	}
     /* ok, space is there, accept something */
     // Figure out how much
     count = min(count, (size_t)spacefree(bufOut));
