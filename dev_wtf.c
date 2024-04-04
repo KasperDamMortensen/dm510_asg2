@@ -1,4 +1,3 @@
-
 #include <linux/module.h>
 #include <linux/init.h>
 #include <linux/slab.h>	
@@ -14,9 +13,7 @@
 #include <asm/switch_to.h>
 #include <linux/cdev.h>
 #include <linux/ioctl.h>
-
 #include "dm510.h"
-
 // This is a buffer which is accessed by one device for reading and another for writing.
 struct buffer {
         wait_queue_head_t inq, outq;       /* read and write queues */
@@ -27,8 +24,6 @@ struct buffer {
         int maxReaders;                     /* max number of readers at a time */
         struct mutex mutex;                /* mutual exclusion semaphore */
 };
-
-
 // This is a device which reads from one buffer and writes into another. 
 struct dm510_device {
     struct buffer *bufferIn;			// The buffer it reads from.
@@ -36,35 +31,27 @@ struct dm510_device {
     struct cdev cdev;               /* Char device structure */		
     // struct mutex mutex;             /* mutual exclusion semaphore */		// I think this should be removed.
 };
-
-
-
 /* 
 * Our parameters which can be set at load time.
 */
-
 int major_number =   MAJOR_NUMBER;		
 int minor_number =   0;					
 int nr_devs = DEVICE_COUNT;				// number of devices 		// static? I saw this somewhere...
 int buffer_size =  BUFFER_SIZE;			 
 int max_readres = MAX_READERS;          
 dev_t first_devno;						// Our first device number 
-
 // I suppose that module_param allows you to modify some structure safely and easily...
 module_param(major_number, int, S_IRUGO);
 module_param(minor_number, int, S_IRUGO);
 //module_param(nr_devs, int, S_IRUGO); makes a lot of errors
 module_param(nr_devs, int, 0);	/* FIXME check perms */
 module_param(buffer_size, int, 0);
-
 // These are our two devices.
 // This variable gets used in the init function.
 static struct dm510_device *devices;
-
 // These are our two buffers.
 static struct buffer *buffer0 = NULL;
 static struct buffer *buffer1 = NULL;
-
 /* file operations struct */
 static struct file_operations dm510_fops = {
     .owner   = THIS_MODULE,
@@ -74,8 +61,6 @@ static struct file_operations dm510_fops = {
     .release = dm510_release,
     .unlocked_ioctl   = dm510_ioctl
 };
-
-
 /* How much space is free? */
 static int spacefree(struct buffer *buf) {
     //printk(KERN_INFO "DM510: spacefree \n");
@@ -83,8 +68,6 @@ static int spacefree(struct buffer *buf) {
         return buf->buffersize - 1;
     return ((buf->rp + buf->buffersize - buf->wp) % buf->buffersize) - 1;
 }
-
-
 /* Wait for space for writing; caller must hold device semaphore.  On
 * error the semaphore will be released before returning. */
 static int getwritespace(struct buffer *buf, struct file *filp)
@@ -109,11 +92,6 @@ static int getwritespace(struct buffer *buf, struct file *filp)
     //printk(KERN_INFO "DM510: getwritespace \n");
     return 0;
 }	
-
-
-
-
-
 // Auxiliary function for initialising a single buffer.
 int setup_buffer(struct buffer **buf, int buffer_size) {
     
@@ -125,7 +103,6 @@ int setup_buffer(struct buffer **buf, int buffer_size) {
         return -ENOMEM;
     }
     memset(*buf, 0, sizeof(struct buffer));
-
     // Allocate the actual buffer
     (*buf)->start = kmalloc(buffer_size, GFP_KERNEL);
     if (!(*buf)->start) {
@@ -134,35 +111,26 @@ int setup_buffer(struct buffer **buf, int buffer_size) {
         //printk(KERN_INFO "DM510: setup buffer failed2 \n");
         return -ENOMEM;
     }
-
     // Initialise stuff
     init_waitqueue_head(&((*buf)->inq));
     init_waitqueue_head(&((*buf)->outq));
     mutex_init(&((*buf)->mutex));
-
     // Initialise the offset pointers
     (*buf)->buffersize = buffer_size;
     (*buf)->maxReaders = max_readres;
     (*buf)->end = (*buf)->start + (*buf)->buffersize;
     (*buf)->rp = (*buf)->wp = (*buf)->start; /* rd and wr from the beginning */
     //printk(KERN_INFO "DM510: setupbuffer succes \n");
-
     return 0; // Success
 }
-
-
 /* Called when module is unloaded */
 // or on failure
 void dm510_cleanup_module( void ) {
-
     int i;
-
     kfree(buffer0->start);
     kfree(buffer1->start);
-
     kfree(buffer0);
     kfree(buffer1);
-
     if (!devices){
         return; /* nothing else to release */
     }
@@ -172,10 +140,8 @@ void dm510_cleanup_module( void ) {
     kfree(devices);
     unregister_chrdev_region(first_devno, nr_devs);
     devices = NULL; /* pedantic */
-
     printk(KERN_INFO "DM510: Module unloaded.\n");
 }
-
 // Auxiliary function to dm510_init_module
 /*
 * Set up a cdev entry.
@@ -191,15 +157,10 @@ static void setup_cdev(struct dm510_device *dev, int index) {
     if (err)
         printk(KERN_NOTICE "Error %d adding buffer%d", err, index);
 }
-
-
-
 /* called when module is loaded */
 int dm510_init_module( void ) {
-
     int result, i;
     dev_t dev = 0;
-
     // Initialise the buffers
     if (buffer0 == NULL || buffer1 ==NULL){
         int result0 = setup_buffer(&buffer0, buffer_size);
@@ -209,7 +170,6 @@ int dm510_init_module( void ) {
             return -1;
         }
     }
-
     // This part makes a dev_t, which is a number containing both a major and a minor number. 
     // And it then registers them as belonging to a device. If the chosen major is available, it is used.
     // Otherwise a new one gets assigned by the kernel. 
@@ -225,7 +185,6 @@ int dm510_init_module( void ) {
         //printk(KERN_WARNING "DM510: can't get major %d\n", major_number);
         return result;
     }
-
     // Allocate and initialise the devices
     first_devno = dev;
     devices = kmalloc(nr_devs * sizeof(struct dm510_device), GFP_KERNEL);
@@ -236,37 +195,26 @@ int dm510_init_module( void ) {
     memset(devices, 0, nr_devs * sizeof(struct dm510_device));
     for (i = 0; i < nr_devs; i++) {
         setup_cdev(devices + i, i);		
-
         if (i == 0) {
             devices[i].bufferIn = buffer0;
             devices[i].bufferOut = buffer1;
             //printk(KERN_INFO "DM510: device zero given buffer\n");
-
         } else {
             devices[i].bufferIn = buffer1;
             devices[i].bufferOut = buffer0;
             //printk(KERN_INFO "DM510: device one given buffers\n");
             }
     }
-
     printk(KERN_INFO "DM510: Hello from your device!\n");
     return 0;
 }
-
-
-
-
-
-
 /* Called when a process tries to open the device file */
 static int dm510_open( struct inode *inode, struct file *filp ) {
     
     struct dm510_device *dev;	
-
     // Identify which device is being opened and save a pointer to it for future use
     dev = container_of(inode->i_cdev, struct dm510_device, cdev);
     filp->private_data = dev;
-
     // Check the intentions of the device and acquire locks and update readers and writers accordingly
     if (filp->f_mode & FMODE_READ) {
         if (mutex_lock_interruptible(&dev->bufferIn->mutex))
@@ -288,21 +236,12 @@ static int dm510_open( struct inode *inode, struct file *filp ) {
         dev->bufferOut->nwriters++;	
         mutex_unlock(&dev->bufferOut->mutex);
     }
-
     printk(KERN_INFO "DM510: open \n");
     return 0;
 }
-
-
-
-
-
-
 /* Called when a process closes the device file. */
 static int dm510_release( struct inode *inode, struct file *filp ) {
-
     struct dm510_device *dev = filp->private_data;
-
     // Check the intentions of the device and acquire locks and update readers and writers accordingly
     if (filp->f_mode & FMODE_READ) {
         if (mutex_lock_interruptible(&dev->bufferIn->mutex))
@@ -318,32 +257,21 @@ static int dm510_release( struct inode *inode, struct file *filp ) {
         dev->bufferOut->nwriters--;	
         mutex_unlock(&dev->bufferOut->mutex);
     }
-
     printk(KERN_INFO "DM510: release \n");
     return 0;
 }
-
-
-
-
-
-
-
 /* Called when a process, which already opened the dev file, attempts to read from it. */
 static ssize_t dm510_read( struct file *filp,
     char *buf,      /* The buffer to fill with data     */
     size_t count,   /* The max number of bytes to read  */
     loff_t *f_pos )  /* The offset in the file           */
 {
-
     struct dm510_device *dev = filp->private_data;
     struct buffer *bufIn = dev->bufferIn;
-
     if (mutex_lock_interruptible(&bufIn->mutex)){	
         //printk(KERN_INFO "DM510: read f1 \n");
         return -ERESTARTSYS;
     }
-
     // Wait for data if there is nothing to read
     while (bufIn->rp == bufIn->wp) { /* nothing to read */
         mutex_unlock(&bufIn->mutex); /* release the lock */
@@ -372,46 +300,32 @@ static ssize_t dm510_read( struct file *filp,
         //printk(KERN_INFO "DM510: read f \n");
         return -EFAULT;
     }
-
     // Update rp to show how much has been read
     dev->bufferIn->rp += count; 
     if (bufIn->rp == bufIn->end)
         bufIn->rp = bufIn->start; /* wrapped */
-
     mutex_unlock (&bufIn->mutex);
-
     /* finally, awake any writers and return */
     wake_up_interruptible(&bufIn->outq);
-
     //printk(KERN_INFO "DM510: read s \n");
     return count;	
 }
-
-
-
-
-
-
-
 /* Called when a process writes to dev file */
 static ssize_t dm510_write( struct file *filp,
     const char *buffer,/* The buffer to get data from      */
     size_t count,   /* The max number of bytes to write */
     loff_t *f_pos )  /* The offset in the file           */
 {
-
     struct buffer *bufOut = ((struct dm510_device *)filp->private_data)->bufferOut;
     int result;
-
     if (mutex_lock_interruptible(&bufOut->mutex))
         return -ERESTARTSYS;
 
     /* Make sure there's space to write */
     result = getwritespace(bufOut, filp);
-    if (result <=0)	{	
-		mutex_unlock(&bufOut->mutex);		
+    if (result)				
         return result; /* getwritespace called mutex_unlock(&bufOut->mutex) */
-	}
+
     /* ok, space is there, accept something */
     // Figure out how much
     count = min(count, (size_t)spacefree(bufOut));
@@ -419,31 +333,22 @@ static ssize_t dm510_write( struct file *filp,
         count = min(count, (size_t)(bufOut->end - bufOut->wp)); /* to end-of-buf */
     else /* the write pointer has wrapped, fill up to rp-1 */
         count = min(count, (size_t)(bufOut->rp - bufOut->wp - 1));
-
     // Copy data into our buffer
     if (copy_from_user(bufOut->wp, buffer, count)) {
         mutex_unlock (&bufOut->mutex);
         return -EFAULT;
     }
-
     // Update wp to show that something was written
     bufOut->wp += count;
     if (bufOut->wp == bufOut->end)
         bufOut->wp = bufOut->start; /* wrapped */
-
     mutex_unlock(&bufOut->mutex);
-
     /* finally, awake any reader */
     wake_up_interruptible(&bufOut->inq);  
 								
     //printk(KERN_INFO "DM510: write \n");
     return count;
 }
-
-
-
-
-
 /* called by system call icotl */ 
 // Works on the bufferIn of the device given as the first argument.
 long dm510_ioctl( 
@@ -451,23 +356,19 @@ long dm510_ioctl(
     unsigned int cmd,   /* command passed from the user */
     unsigned long arg ) /* argument of the command */
 {
-
     struct dm510_device *dev = filp->private_data;
     struct buffer *bufIn = dev->bufferIn;
     int retval = 0, err = 0;
     int data;
     char *new_start;
-
     /* ioctl code belongs here */
     printk(KERN_INFO "DM510: ioctl called.\n");
-
     /*
     * extract the type and number bitfields, and don't decode
     * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
     */
     if (_IOC_TYPE(cmd) != DM510_IOC_MAGIC) return -ENOTTY;
     if (_IOC_NR(cmd) > DM510_IOC_MAXNR) return -ENOTTY;
-
     /*
     * the direction is a bitmask, and VERIFY_WRITE catches R/W
     * transfers. `Type' is user-oriented, while
@@ -475,13 +376,10 @@ long dm510_ioctl(
     * "write" is reversed
     */
    
-
     switch(cmd) {
-
         // Adjust the size of the bufIn of the device given
         // Must be at least large enough for the data still to be read
         case DM510_IOC_ADJUST_BUFFERSIZE:
-
             // Check how much data is written inside the current buffer.
             if (bufIn->rp == bufIn->wp) {
                 data = 0;
@@ -490,18 +388,15 @@ long dm510_ioctl(
             } else {     // rp > wp
                 data = ((bufIn->end - bufIn->rp) + (bufIn->wp - bufIn->start));
             }
-
             // Check that the buffer size isn't smaller than the data inside.
             if (data > arg) {
                 return -EINVAL;
             }
-
             // Allocate memory with the desired size.
             new_start = kmalloc(arg, GFP_KERNEL);
             if (!new_start) {
                 return -ENOMEM;
             }
-
             // Copy the data into the new buffer.
             if (data != 0) {
                 if (bufIn->rp < bufIn->wp) {
@@ -511,7 +406,6 @@ long dm510_ioctl(
                     memcpy((new_start + (bufIn->end - bufIn->rp)), bufIn->start, (bufIn->wp - bufIn->start));
                 }
             }
-
             // Adjust all the pointers
             bufIn->start = new_start;
             bufIn->buffersize = arg;
@@ -521,12 +415,10 @@ long dm510_ioctl(
             } else {
                 bufIn->wp = bufIn->start+((bufIn->end - bufIn->rp) + (bufIn->wp - bufIn->start));
             }
-
             return 0;
                 
             
         case DM510_IOC_ADJUST_NREADERS: 
-
 				if (dev->bufferIn->nreaders <= arg){
 					dev->bufferIn->maxReaders = arg;
 					return 0;
@@ -534,60 +426,26 @@ long dm510_ioctl(
 					return -EINVAL;
 				} 
             
-
         default:  /* redundant, as cmd was checked against MAXNR */
         return -ENOTTY;
     }
-
     return retval; //has to be changed
 	
 		
 }
-
-
-
-
-
-
-
-
 module_init( dm510_init_module );
 module_exit( dm510_cleanup_module );
-
 MODULE_AUTHOR( "...Kasper Dam Mortensen, Diego Fernández Markus" );
 MODULE_LICENSE( "GPL" );
-
-
-
-
-
-
-
-
-
-
-
 // ================ DUMPSTER =================================
 // code ideas:
 //setup_dev and setup_buffer should maybe be void
 //in init we need to make an inode, because iminor() only works on that type
 // do we  need pdebug???, if we do we need to include i think
-
-
-
-
-
-
-
-
 // ============ BRAINSTORM ========================
-
-
 /* =========== VERSION ==================
-
 This version includes DM510_IOC_ADJUST_BUFFERSIZE and passes the moduletest.
 It has also been modified to use the header file dm510.h.
 It now allows multiple readers to open a device at a time, with a limit saved as a field of the structure buffer. 
 I have also cleaned it up a bit.
-
 */
