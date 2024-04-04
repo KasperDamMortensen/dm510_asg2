@@ -1,5 +1,5 @@
 /* Test program for 2nd mandatory assignment.
-    test if ioctl can increase the maximum number of readers
+    test if ioctl can change the number of readers
  */
 
 #include <stdio.h>
@@ -29,16 +29,16 @@ int main(int argc, char *argv[])
     int cnt;
     unsigned long i = 2;
 
-        fd = open("/dev/dm510-0", O_RDWR);
-        perror("open1:");
+        fd = open("/dev/dm510-0", O_RDNLY);
+        perror("open1");
         fd2 = open("/dev/dm510-0", O_RDONLY);
-        perror("open2:");
-        if (ioctl(fd, DM510_IOC_ADJUST_NREADERS, i) < 0) {
+        perror("open2");
+        if (ioctl(fd, DM510_IOC_ADJUST_NREADERS, i) == -1) {
             perror("ioctl failed");
             return 1;
         }
         printf("set the maximum number of readers to %lu\n ",i);
         fd3 = open("/dev/dm510-0", O_RDONLY);
-        perror("open3:");
+        perror("open3");
     return 0;
 }
