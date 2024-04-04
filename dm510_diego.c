@@ -24,7 +24,7 @@ struct buffer {
         int buffersize;                    /* used in pointer arithmetic */
         char *rp, *wp;                     /* where to read, where to write */
         int nreaders, nwriters;            /* number of openings for r/w */
-        int maxReaders                     /* max number of readers at a time */
+        int maxReaders;                     /* max number of readers at a time */
         struct mutex mutex;                /* mutual exclusion semaphore */
 };
 
@@ -235,7 +235,6 @@ int dm510_init_module( void ) {
     }
     memset(devices, 0, nr_devs * sizeof(struct dm510_device));
     for (i = 0; i < nr_devs; i++) {
-        mutex_init(&devices[i].mutex);
         setup_cdev(devices + i, i);		
 
         if (i == 0) {
@@ -530,6 +529,13 @@ long dm510_ioctl(
                 
             
         case DM510_IOC_ADJUST_NREADERS: 
+
+				if (dev->bufferIn->nreaders > arg){
+					dev->bufferIn->maxReaders = arg;
+					return 0;
+				}else{
+					return -EINVAL;
+				} 
             
 
         default:  /* redundant, as cmd was checked against MAXNR */
@@ -537,16 +543,9 @@ long dm510_ioctl(
     }
 
     return retval; //has to be changed
+	
+		
 }
-case DM510_IOC_ADJUST_NREADERS: 
-
-				if (dev->nreaders > arg){
-					dev->maxReaders = arg;
-					return 0;
-				}else{
-					return -EINVAL;
-				}
-
 
 
 
