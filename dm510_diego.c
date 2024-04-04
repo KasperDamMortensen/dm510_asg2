@@ -538,6 +538,14 @@ long dm510_ioctl(
 
     return retval; //has to be changed
 }
+case DM510_IOC_ADJUST_NREADERS: 
+
+				if (dev->nreaders > arg){
+					dev->maxReaders = arg;
+					return 0;
+				}else{
+					return -EINVAL;
+				}
 
 
 
