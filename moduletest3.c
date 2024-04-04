@@ -18,37 +18,6 @@
 #define DM510_IOC_ADJUST_NREADERS    _IOW(DM510_IOC_MAGIC, 2, unsigned long)
 
 
-
-#define ITS 10000
-
-void read_all(int fd, void *buf, int count) {
-    while (count > 0) {
-        int ret;
-        ret = read(fd, buf, count);
-        if (ret == -1) {
-            perror("read");
-            exit(1);
-        }
-
-        count -= ret;
-        buf += ret;
-    }
-}
-
-void write_all(int fd, void *buf, int count) {
-    while (count > 0) {
-        int ret;
-        ret = write(fd, buf, count);
-        if (ret == -1) {
-            perror("write");
-            exit(1);
-        }
-
-        count -= ret;
-        buf += ret;
-    }
-}
-
 int main(int argc, char *argv[])
 {
     pid_t pid;
@@ -64,22 +33,12 @@ int main(int argc, char *argv[])
         perror("open1:");
         fd2 = open("/dev/dm510-0", O_RDONLY);
         perror("open2:");
-        if (ioctl(fd, DM510_IOC_ADJUST_NREADERS, 2) == -1) {
+        if (ioctl(fd, DM510_IOC_ADJUST_NREADERS, i) == -1) {
             perror("ioctl failed");
             return 1;
         }
-        printf("set the maximum number of readers to 2");
+        printf("set the maximum number of readers to %lu\n ",i);
         fd3 = open("/dev/dm510-0", O_RDONLY);
         perror("open3:");
-        val = read(fd, &val, cnt);
-        perror("read:");
-        
-        val = read(fd2, &val, cnt);
-        perror("read2:");
-        
-        val = read(fd3, &val, cnt);
-        perror("read:");
-
-
     return 0;
 }
