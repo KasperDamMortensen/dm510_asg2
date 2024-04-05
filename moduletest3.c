@@ -23,13 +23,9 @@
 
 int main(int argc, char *argv[])
 {
-    pid_t pid;
     int fd;
     int fd2;
     int fd3;
-    int sum = 0;
-    int val;
-    int cnt;
     unsigned long i = 2;
 
         fd = open("/dev/dm510-0", O_RDONLY);
