@@ -1,3 +1,10 @@
+/* 
+ Moduletest 5a
+ Test program for 2nd mandatory assignment.
+ Checks and shows that the buffersize is indeed 10 when the module is loaded.
+ It should print a count to 9 and then sleep and run until stopped manually.
+ */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -8,8 +15,7 @@
 
 int main(int argc, char *argv[])
 {
-    pid_t pid;
-    int fd, fd2;
+    int fd;
     int val = 0;
     int res = 1;
     int i;
