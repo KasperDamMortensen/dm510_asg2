@@ -1,5 +1,8 @@
-/* Test program for 2nd mandatory assignment.
- tests if a device can be opened in writing mode by multiple threads. 
+/* 
+ Moduletest 2
+ Test program for 2nd mandatory assignment.
+ Tests if a device can be opened in writing mode by multiple threads. 
+ It should return "Device or resource busy" after opening the second device.
  */
 
 #include <stdio.h>
