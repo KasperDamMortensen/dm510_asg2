@@ -12,19 +12,12 @@
 #include <fcntl.h>
 #include <errno.h>
 
-#define ITS 10000
-
-
 int main(int argc, char *argv[])
 {
-    pid_t pid;
-    int fd3;
+    int fd;
     int fd2;
-    int sum = 0, i;
-    int val;
-    int cnt;
 
-        fd3 = open("/dev/dm510-0", O_WRONLY);
+        fd = open("/dev/dm510-0", O_WRONLY);
         perror("w open");
         fd2 = open("/dev/dm510-0", O_WRONLY);
 	    perror("w open");	
