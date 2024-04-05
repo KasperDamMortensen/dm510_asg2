@@ -1,5 +1,8 @@
-/* Test program for 2nd mandatory assignment.
-    test if ioctl can change the number of readers
+/* 
+ Moduletest 3
+ Test program for 2nd mandatory assignment.
+ Tests if a device can be opened in reading mode by multiple threads up to a limit, 
+ and then tests the ioctl command to adjust that limit. 
  */
 
 #include <stdio.h>
