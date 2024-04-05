@@ -485,9 +485,3 @@ MODULE_LICENSE( "GPL" );
 
 
 
-
-/* =========== VERSION ==================
-
-This might just be the final version.
-
-*/
