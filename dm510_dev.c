@@ -446,7 +446,8 @@ long dm510_ioctl(
                 }
             }
 
-			// Remember to deallocate the old buffer!!!
+	    // Remember to deallocate the old buffer!!!
+            kfree(bufIn->start);
 
             // Adjust all the pointers
             bufIn->start = new_start;
@@ -487,6 +488,6 @@ MODULE_LICENSE( "GPL" );
 
 /* =========== VERSION ==================
 
-This version is missing deallocation in ioctl buffersize.
+This might just be the final version.
 
 */
