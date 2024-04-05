@@ -1,15 +1,10 @@
-/* Test program for 2nd mandatory assignment.
-    Test if ioctl can adjust the buffer size.
- */
-
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <sys/ioctl.h>
-
 #include <errno.h>
+#include <sys/ioctl.h>
 
 #define DM510_IOC_MAGIC 'Z'
 #define DM510_IOC_MAXNR 2
@@ -17,66 +12,60 @@
 #define DM510_IOC_ADJUST_BUFFERSIZE  _IOW(DM510_IOC_MAGIC, 1, unsigned long)
 #define DM510_IOC_ADJUST_NREADERS    _IOW(DM510_IOC_MAGIC, 2, unsigned long)
 
-
 int main(int argc, char *argv[])
 {
-    int fd;
-    unsigned long i = 15;
-    // struct dm510_device *dev;
-    // int bufSize;
-    int ret;
-    int val1 = 1;
-    int val2 = 2;
-    int val3 = 3;
-    int rec1;
-    int rec2;
-    int rec3;
-    int count = 1;
+    pid_t pid;
+    int fd, fd2;
+    int val = 0;
+    int res = 1;
+    int i;
 
     fd = open("/dev/dm510-0", O_RDWR);
-    perror("open1");
+    perror("WR open");
+    fd2 = open("/dev/dm510-1", O_RDWR);
+    perror("WR open");
 
-    ret = write(fd, &val1, count);
-    if (ret == -1) {
-        perror("write");
-        exit(1);
-    }
-    ret = write(fd, &val2, count);
-    if (ret == -1) {
-        perror("write");
-        exit(1);
-    }
-    ret = write(fd, &val3, count);
-    if (ret == -1) {
-        perror("write");
-        exit(1);
-    }
-    
-    // printf("Amount written: %d\n", ret);
+    // ioctl(fd2, DM510_IOC_ADJUST_BUFFERSIZE, 10);     // This causes problems
+    // ioctl(fd, DM510_IOC_ADJUST_BUFFERSIZE, 10);
+    // perror("ioctl:");
 
-    fd = open("/dev/dm510-1", O_RDWR);
-    perror("open2");
-
-    ret = read(fd, &rec1, count);
-    if (ret == -1) {
-        perror("read");
-        exit(1);
-    }
-    ret = read(fd, &rec2, count);
-    if (ret == -1) {
-        perror("read");
-        exit(1);
-    }
-    ret = read(fd, &rec3, count);
-    if (ret == -1) {
-        perror("read");
-        exit(1);
+    for (i = 0; i < 9; i++) {   
+        val++;
+        res = write(fd, &val, 1);
+        printf("result: %d\n", res);
+        printf("Wrote value1: %d\n", val);
     }
 
-    // printf("Amount read: %d\n", ret);
-    printf("Message read: %d\n", rec1);   
-    printf("Message read: %d\n", rec2);   
-    printf("Message read: %d\n", rec3);   
+    for (i = 0; i < 9; i++) {
+        read(fd2, &res, 1);
+        printf("read value1: %d\n", res);
+        if (res != i + 1) {
+            printf("Error: Read value1 is not in order!\n");
+            return 1; // Exit with error
+        }
+    }
+
+    /*
+    val = 0;
+
+    for (i = 10; i < 15; i++) {
+        val++;
+        res = write(fd, &val, 1);
+        printf("Wrote value2: %d\n", val);
+    }
+
+    res = 1;    // What is the point of these two lines?
+    val = 0;
+
+    for (i = 0; i < 9; i++) {
+        res = read(fd2, &val, 1);
+        printf("read value2: %d\n", val);
+        if (val != i + 1) {
+            printf("Error: Read value2 is not in order!\n");
+            return 1; // Exit with error
+        }
+    }
+    */
 
     return 0;
 }
