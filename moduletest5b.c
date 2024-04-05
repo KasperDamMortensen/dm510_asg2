@@ -4,7 +4,7 @@ Test program for 2nd mandatory assignment.
 Changes the buffer size and tries to fill it out. 
 It should print a count to 4 and then sleep and run until stopped manually.
 */
-*/
+
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -21,7 +21,6 @@ It should print a count to 4 and then sleep and run until stopped manually.
 
 int main(int argc, char *argv[])
 {
-    pid_t pid;
     int fd, fd2;
     int val = 0;
     int res = 1;
