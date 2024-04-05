@@ -1,3 +1,13 @@
+/* 
+ Moduletest 4
+ Test program for 2nd mandatory assignment.
+ Tests that processes read data from the buffers in the same order in 
+ which it was written.
+ It also tests that the buffer pointers rp and wp wrap around when 
+ they reach the end of the buffer (hence the last two for-each loops).
+ It should return a count to 9 and then to 5 for both write and read.
+ */
+
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
@@ -14,7 +24,6 @@
 
 int main(int argc, char *argv[])
 {
-    pid_t pid;
     int fd, fd2;
     int val = 0;
     int res = 1;
@@ -24,10 +33,6 @@ int main(int argc, char *argv[])
     perror("WR open");
     fd2 = open("/dev/dm510-1", O_RDWR);
     perror("WR open");
-
-    // ioctl(fd2, DM510_IOC_ADJUST_BUFFERSIZE, 10);     // This causes problems
-    // ioctl(fd, DM510_IOC_ADJUST_BUFFERSIZE, 10);
-    // perror("ioctl:");
 
     for (i = 0; i < 9; i++) {   
         val++;
@@ -62,7 +67,6 @@ int main(int argc, char *argv[])
             return 1; // Exit with error
         }
     }
-    
 
     return 0;
 }
