@@ -29,7 +29,7 @@ int main(int argc, char *argv[])
     int cnt;
     unsigned long i = 2;
 
-        fd = open("/dev/dm510-0", O_RDNLY);
+        fd = open("/dev/dm510-0", O_RDONLY);
         perror("open1");
         fd2 = open("/dev/dm510-0", O_RDONLY);
         perror("open2");
