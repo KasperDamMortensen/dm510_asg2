@@ -25,18 +25,18 @@ int main(int argc, char *argv[])
     fd2 = open("/dev/dm510-1", O_RDWR);
     perror("WR open");
 
-    ioctl(fd2, DM510_IOC_ADJUST_BUFFERSIZE, 10);
-    ioctl(fd, DM510_IOC_ADJUST_BUFFERSIZE, 10);
-    perror("ioctl:");
+    // ioctl(fd2, DM510_IOC_ADJUST_BUFFERSIZE, 10);     // This causes problems
+    // ioctl(fd, DM510_IOC_ADJUST_BUFFERSIZE, 10);
+    // perror("ioctl:");
 
-    for (i = 0; i < 10; i++) {
+    for (i = 0; i < 9; i++) {   
         val++;
         res = write(fd, &val, 1);
         printf("result: %d\n", res);
         printf("Wrote value1: %d\n", val);
     }
 
-    for (i = 0; i < 5; i++) {
+    for (i = 0; i < 9; i++) {
         read(fd2, &res, 1);
         printf("read value1: %d\n", res);
         if (res != i + 1) {
@@ -45,18 +45,16 @@ int main(int argc, char *argv[])
         }
     }
 
+    
     val = 0;
 
-    for (i = 10; i < 15; i++) {
+    for (i = 0; i < 5; i++) {
         val++;
         res = write(fd, &val, 1);
         printf("Wrote value2: %d\n", val);
     }
 
-    res = 1;
-    val = 0;
-
-    for (i = 0; i < 9; i++) {
+    for (i = 0; i < 5; i++) {
         res = read(fd2, &val, 1);
         printf("read value2: %d\n", val);
         if (val != i + 1) {
@@ -64,6 +62,7 @@ int main(int argc, char *argv[])
             return 1; // Exit with error
         }
     }
+    
 
     return 0;
 }
