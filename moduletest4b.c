@@ -15,7 +15,7 @@
 int main(int argc, char *argv[])
 {
     pid_t pid;
-    int fd;
+    int fd, fd2;
     int val = 0;
     int res = 1;
     int i;
@@ -23,7 +23,10 @@ int main(int argc, char *argv[])
     fd = open("/dev/dm510-0", O_RDWR);
     perror("WR open");
 
-    ioctl(fd, DM510_IOC_ADJUST_BUFFERSIZE, 5);
+    fd2 = open("/dev/dm510-1", O_RDWR);
+    perror("WR open");
+
+    ioctl(fd2, DM510_IOC_ADJUST_BUFFERSIZE, 5);
     perror("ioctl:");
 
     for (i = 0; i < 15; i++) {   
