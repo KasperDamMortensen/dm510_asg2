@@ -1,3 +1,10 @@
+/* 
+Moduletest 5b
+Test program for 2nd mandatory assignment.
+Changes the buffer size and tries to fill it out. 
+It should print a count to 4 and then sleep and run until stopped manually.
+*/
+*/
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/types.h>
